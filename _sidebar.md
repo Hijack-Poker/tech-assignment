@@ -1,0 +1,6 @@
+- [Home](README.md)
+- [Challenge Overview](challenge-overview.md)
+- **Challenge Options**
+  - [A: Rewards Program](challenge-rewards.md)
+  - [B: Bomb Pots](challenge-bomb-pots.md)
+  - [C: Daily Streaks](challenge-streaks.md)
