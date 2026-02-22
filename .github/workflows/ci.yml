@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-holdem-processor:
+    name: Holdem Processor Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serverless-v2/services/holdem-processor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+      - run: npm test
+
+  test-rewards-api:
+    name: Rewards API Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serverless-v2/services/rewards-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+      - run: npm test
+
+  test-streaks-api:
+    name: Streaks API Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serverless-v2/services/streaks-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm install
+      - run: npm test
