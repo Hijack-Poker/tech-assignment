@@ -88,6 +88,26 @@ services:
           --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
           2>/dev/null || true
 
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name rewards-leaderboard \
+          --attribute-definitions \
+            AttributeName=monthKey,AttributeType=S \
+            AttributeName=playerId,AttributeType=S \
+          --key-schema AttributeName=monthKey,KeyType=HASH AttributeName=playerId,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name rewards-notifications \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=notificationId,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=notificationId,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
         # Streaks tables
         aws dynamodb create-table \
           --endpoint-url http://dynamodb-local:8000 \
@@ -101,6 +121,26 @@ services:
         aws dynamodb create-table \
           --endpoint-url http://dynamodb-local:8000 \
           --table-name streaks-activity \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=date,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=date,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name streaks-rewards \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=rewardId,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=rewardId,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name streaks-freeze-history \
           --attribute-definitions \
             AttributeName=playerId,AttributeType=S \
             AttributeName=date,AttributeType=S \

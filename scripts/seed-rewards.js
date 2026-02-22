@@ -30,8 +30,7 @@ const TIERS = [
   { name: 'Bronze', minPoints: 0 },
   { name: 'Silver', minPoints: 500 },
   { name: 'Gold', minPoints: 2000 },
-  { name: 'Platinum', minPoints: 5000 },
-  { name: 'Diamond', minPoints: 15000 },
+  { name: 'Platinum', minPoints: 10000 },
 ];
 
 const NAMES = [

@@ -160,12 +160,12 @@ src/
 | `createdAt` | String | — | ISO timestamp |
 | `updatedAt` | String | — | ISO timestamp |
 
-**Points Ledger Table** — `rewards-points-ledger`
+**Points Ledger Table** — `rewards-transactions`
 
 | Attribute | Type | Key | Description |
 |-----------|------|-----|-------------|
 | `playerId` | String | PK | Player GUID |
-| `transactionId` | String | SK | ULID or UUID |
+| `timestamp` | Number | SK | Epoch milliseconds (ensures sort order) |
 | `type` | String | — | `gameplay`, `adjustment`, `bonus` |
 | `basePoints` | Number | — | Pre-multiplier points |
 | `multiplier` | Number | — | Tier multiplier at time of earn |
@@ -270,7 +270,7 @@ In production, points would be awarded by the game processor after each hand. Fo
 
 ## Getting Started
 
-1. Review the skeleton repo's `apps/rewards-backend/` and `apps/rewards-frontend/` directories
+1. Review the skeleton repo's `serverless-v2/services/rewards-api/` and `serverless-v2/services/rewards-frontend/` directories
 2. Set up DynamoDB Local via Docker Compose
 3. Start with the points engine — it's the core of everything else
 4. Build the tier logic on top of points

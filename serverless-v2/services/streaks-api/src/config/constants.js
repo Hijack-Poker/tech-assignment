@@ -5,12 +5,12 @@
  * Rewards awarded at specific streak lengths.
  */
 const MILESTONES = [
-  { days: 3, reward: 'Bronze Badge', bonusPoints: 10, description: '3-day streak' },
-  { days: 7, reward: 'Silver Badge', bonusPoints: 25, description: '7-day streak' },
-  { days: 14, reward: 'Gold Badge', bonusPoints: 50, description: '14-day streak' },
-  { days: 30, reward: 'Platinum Badge', bonusPoints: 100, description: '30-day streak' },
-  { days: 60, reward: 'Diamond Badge', bonusPoints: 250, description: '60-day streak' },
-  { days: 100, reward: 'Legend Badge', bonusPoints: 500, description: '100-day streak' },
+  { days: 3, loginReward: 50, playReward: 100, description: '3-day streak' },
+  { days: 7, loginReward: 150, playReward: 300, description: '7-day streak' },
+  { days: 14, loginReward: 400, playReward: 800, description: '14-day streak' },
+  { days: 30, loginReward: 1000, playReward: 2000, description: '30-day streak' },
+  { days: 60, loginReward: 2500, playReward: 5000, description: '60-day streak' },
+  { days: 90, loginReward: 5000, playReward: 10000, description: '90-day streak' },
 ];
 
 /**

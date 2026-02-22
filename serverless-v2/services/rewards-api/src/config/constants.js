@@ -8,8 +8,7 @@ const TIERS = {
   BRONZE: { name: 'Bronze', minPoints: 0, multiplier: 1.0 },
   SILVER: { name: 'Silver', minPoints: 500, multiplier: 1.25 },
   GOLD: { name: 'Gold', minPoints: 2000, multiplier: 1.5 },
-  PLATINUM: { name: 'Platinum', minPoints: 5000, multiplier: 2.0 },
-  DIAMOND: { name: 'Diamond', minPoints: 15000, multiplier: 3.0 },
+  PLATINUM: { name: 'Platinum', minPoints: 10000, multiplier: 2.0 },
 };
 
 /**
@@ -36,7 +35,7 @@ function getTierForPoints(points) {
  * Get the next tier above the current one (or null if at max).
  */
 function getNextTier(currentTierName) {
-  const tierOrder = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'];
+  const tierOrder = ['Bronze', 'Silver', 'Gold', 'Platinum'];
   const currentIndex = tierOrder.indexOf(currentTierName);
   if (currentIndex === -1 || currentIndex === tierOrder.length - 1) return null;
   const nextName = tierOrder[currentIndex + 1];

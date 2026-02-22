@@ -289,13 +289,13 @@ The `infrastructure/mysql-init/01-schema.sql` file creates tables and seed data 
 Created by `scripts/init-dynamodb.sh` (also run by the `dynamodb-init` container on startup):
 
 - `rewards-players` — Player tier and points
-- `rewards-points-ledger` — Points transaction history
+- `rewards-transactions` — Points transaction history
 - `rewards-leaderboard` — Monthly leaderboard
 - `rewards-notifications` — Player notifications
-- `player-streaks` — Streak state
-- `player-daily-activity` — Daily check-in records
-- `streak-rewards` — Streak milestone rewards
-- `streak-freeze-history` — Freeze usage history
+- `streaks-players` — Streak state
+- `streaks-activity` — Daily check-in records
+- `streaks-rewards` — Streak milestone rewards
+- `streaks-freeze-history` — Freeze usage history
 - `connections` — WebSocket connection tracking (Option B)
 
 ---

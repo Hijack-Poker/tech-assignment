@@ -57,7 +57,7 @@ platform/
 │   │   └── games/common/          # Shared: betting, cards, rotations, constants
 │   ├── api/                       # REST API (Laravel/PHP)
 │   ├── backoffice/                # Admin panel (Laravel)
-│   ├── rewards-backend/           # Rewards service (NestJS, TypeScript)
+│   ├── rewards-api/               # Rewards service (Express, TypeScript)
 │   └── rewards-frontend/          # Rewards web app (React, Redux, TypeScript)
 ├── serverless-v2/
 │   ├── services/                  # Lambda services (Serverless Framework v4)

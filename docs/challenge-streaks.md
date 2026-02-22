@@ -189,7 +189,7 @@ streaks-frontend/
 
 ### Data Model (DynamoDB)
 
-**Player Streaks Table** — `player-streaks`
+**Player Streaks Table** — `streaks-players`
 
 | Attribute | Type | Key | Description |
 |-----------|------|-----|-------------|
@@ -205,7 +205,7 @@ streaks-frontend/
 | `lastFreezeGrantDate` | String | — | `YYYY-MM` when free monthly freeze was last granted |
 | `updatedAt` | String | — | ISO timestamp |
 
-**Daily Activity Table** — `player-daily-activity`
+**Daily Activity Table** — `streaks-activity`
 
 | Attribute | Type | Key | Description |
 |-----------|------|-----|-------------|
@@ -218,7 +218,7 @@ streaks-frontend/
 | `loginStreakAtDay` | Number | — | Login streak count on this day |
 | `playStreakAtDay` | Number | — | Play streak count on this day |
 
-**Streak Rewards Table** — `streak-rewards`
+**Streak Rewards Table** — `streaks-rewards`
 
 | Attribute | Type | Key | Description |
 |-----------|------|-----|-------------|
@@ -230,7 +230,7 @@ streaks-frontend/
 | `streakCount` | Number | — | Actual streak when earned |
 | `createdAt` | String | — | ISO timestamp |
 
-**Freeze History Table** — `streak-freeze-history`
+**Freeze History Table** — `streaks-freeze-history`
 
 | Attribute | Type | Key | Description |
 |-----------|------|-----|-------------|

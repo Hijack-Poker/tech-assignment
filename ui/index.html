@@ -364,8 +364,8 @@ function render(data) {
     seat.dataset.seat = p.seat;
 
     // Add status classes
-    if (p.status === '4') seat.classList.add('folded');
-    if (p.status === '3') seat.classList.add('allin');
+    if (p.status === '11') seat.classList.add('folded');
+    if (p.status === '12') seat.classList.add('allin');
     if (p.seat === game.dealerSeat) seat.classList.add('dealer');
     else if (p.seat === game.smallBlindSeat) seat.classList.add('sb');
     else if (p.seat === game.bigBlindSeat) seat.classList.add('bb');
