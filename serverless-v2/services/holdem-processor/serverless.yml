@@ -1,0 +1,30 @@
+service: holdem-processor
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  memorySize: 512
+  timeout: 60
+  environment:
+    STAGE: ${self:provider.stage}
+
+functions:
+  processHand:
+    handler: handler.handler
+    events:
+      - sqs:
+          arn: !GetAtt HoldemProcessorQueue.Arn
+          batchSize: 5
+          functionResponseType: ReportBatchItemFailures
+
+resources:
+  Resources:
+    HoldemProcessorQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: holdem-processor-queue
+        VisibilityTimeout: 60

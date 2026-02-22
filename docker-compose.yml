@@ -1,0 +1,322 @@
+services:
+  # ─── Core Infrastructure ─────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    profiles: [core, rewards, engine, streaks]
+    ports:
+      - "${MYSQL_EXTERNAL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hijack_poker}
+      MYSQL_USER: ${MYSQL_USER:-hijack}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hijack_dev}
+    volumes:
+      - ./infrastructure/mysql-init:/docker-entrypoint-initdb.d
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    profiles: [core, rewards, engine, streaks]
+    ports:
+      - "${REDIS_EXTERNAL_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  dynamodb-local:
+    image: amazon/dynamodb-local
+    profiles: [core, rewards, engine, streaks]
+    ports:
+      - "${DYNAMODB_EXTERNAL_PORT:-8000}:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    healthcheck:
+      test: ["CMD-SHELL", "java -version 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  dynamodb-init:
+    image: amazon/aws-cli
+    profiles: [core, rewards, engine, streaks]
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # WebSocket connections table
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name connections \
+          --attribute-definitions \
+            AttributeName=connectionId,AttributeType=S \
+            AttributeName=tableSubscription,AttributeType=S \
+          --key-schema AttributeName=connectionId,KeyType=HASH \
+          --global-secondary-indexes '[{"IndexName":"tableSubscription-index","KeySchema":[{"AttributeName":"tableSubscription","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"},"ProvisionedThroughput":{"ReadCapacityUnits":5,"WriteCapacityUnits":5}}]' \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        # Rewards tables
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name rewards-players \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name rewards-transactions \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=timestamp,AttributeType=N \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        # Streaks tables
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name streaks-players \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name streaks-activity \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=date,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=date,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
+        echo "All DynamoDB tables created."
+
+  # ─── Engine Profile (Option B: Bomb Pots) ────────────────────────────
+  elasticmq:
+    image: softwaremill/elasticmq
+    profiles: [engine]
+    ports:
+      - "9324:9324"
+    volumes:
+      - ./infrastructure/elasticmq.conf:/opt/elasticmq.conf
+    healthcheck:
+      test: ["CMD-SHELL", "curl -so /dev/null -w '%{http_code}' http://localhost:9324 | grep -q '400' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  eventbridge-mock:
+    image: node:22-alpine
+    profiles: [engine]
+    ports:
+      - "4010:4010"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/server.js << 'SCRIPT'
+        const http = require("http");
+        const server = http.createServer((req, res) => {
+          let body = "";
+          req.on("data", chunk => body += chunk);
+          req.on("end", () => {
+            try {
+              const event = JSON.parse(body);
+              console.log("[EventBridge Mock] Event received:", JSON.stringify(event, null, 2));
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ FailedEntryCount: 0, Entries: [{ EventId: "mock-" + Date.now() }] }));
+            } catch (e) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: "Invalid JSON" }));
+            }
+          });
+        });
+        server.listen(4010, "0.0.0.0", () => console.log("[EventBridge Mock] Listening on :4010"));
+        SCRIPT
+        node /tmp/server.js
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4010 || true"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  holdem-processor:
+    image: node:22-alpine
+    profiles: [engine]
+    ports:
+      - "${HOLDEM_PROCESSOR_PORT:-3030}:3030"
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/holdem-processor:/app
+      - ./serverless-v2/shared:/app/shared
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_healthy
+      elasticmq:
+        condition: service_healthy
+    environment:
+      STAGE: local
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-hijack}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hijack_dev}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hijack_poker}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SQS_ENDPOINT: http://elasticmq:9324
+      SQS_HOLDEM_QUEUE_URL: http://elasticmq:9324/000000000000/holdem-processor-queue
+      EVENTBRIDGE_ENDPOINT: http://eventbridge-mock:4010
+      EVENT_BUS_NAME: poker-events
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+
+  cash-game-broadcast:
+    image: node:22-alpine
+    profiles: [engine]
+    ports:
+      - "${BROADCAST_PORT:-3032}:3032"
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/cash-game-broadcast:/app
+      - ./serverless-v2/shared:/app/shared
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      STAGE: local
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-hijack}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hijack_dev}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hijack_poker}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      CONNECTIONS_TABLE: connections
+      EVENTBRIDGE_ENDPOINT: http://eventbridge-mock:4010
+      EVENT_BUS_NAME: poker-events
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+
+  # ─── Rewards Profile (Option A) ──────────────────────────────────────
+  rewards-api:
+    image: node:22-alpine
+    profiles: [rewards]
+    ports:
+      - "${REWARDS_API_PORT:-5000}:5000"
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/rewards-api:/app
+      - ./serverless-v2/shared:/app/shared
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      STAGE: local
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      REWARDS_PLAYERS_TABLE: rewards-players
+      REWARDS_TRANSACTIONS_TABLE: rewards-transactions
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+
+  rewards-frontend:
+    image: node:22-alpine
+    profiles: [rewards]
+    ports:
+      - "${REWARDS_FRONTEND_PORT:-4000}:4000"
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/rewards-frontend:/app
+    environment:
+      VITE_API_URL: http://localhost:5000
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        npm install && npm run dev
+
+  # ─── Streaks Profile (Option C) ──────────────────────────────────────
+  streaks-api:
+    image: node:22-alpine
+    profiles: [streaks]
+    ports:
+      - "${STREAKS_API_PORT:-5001}:5001"
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/streaks-api:/app
+      - ./serverless-v2/shared:/app/shared
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      STAGE: local
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      STREAKS_PLAYERS_TABLE: streaks-players
+      STREAKS_ACTIVITY_TABLE: streaks-activity
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+
+  streaks-frontend:
+    image: node:22-alpine
+    profiles: [streaks]
+    ports:
+      - "${STREAKS_FRONTEND_PORT:-4001}:4001"
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/streaks-frontend:/app
+    environment:
+      VITE_API_URL: http://localhost:5001
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        npm install && npm run dev
+
+volumes:
+  mysql-data:

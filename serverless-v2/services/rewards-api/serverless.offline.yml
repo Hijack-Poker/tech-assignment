@@ -1,0 +1,25 @@
+service: rewards-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: local
+  region: us-east-1
+  environment:
+    STAGE: local
+
+functions:
+  api:
+    handler: handler.api
+    events:
+      - httpApi: '*'
+
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 5000
+    lambdaPort: 5002

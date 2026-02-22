@@ -1,0 +1,15 @@
+{
+  "name": "hijack-tech-assignment",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hijack Poker Technical Assignment - Serverless Infrastructure",
+  "scripts": {
+    "start:rewards": "docker compose --profile rewards up",
+    "start:engine": "docker compose --profile engine up",
+    "start:streaks": "docker compose --profile streaks up",
+    "stop": "docker compose down -v",
+    "seed:rewards": "node scripts/seed-rewards.js",
+    "seed:streaks": "node scripts/seed-streaks.js",
+    "simulate:hands": "node scripts/simulate-hands.js"
+  }
+}

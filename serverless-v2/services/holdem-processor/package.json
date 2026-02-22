@@ -1,0 +1,31 @@
+{
+  "name": "@hijack/holdem-processor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hold'em hand processor — SQS consumer Lambda",
+  "scripts": {
+    "start": "npx serverless offline --config serverless.offline.yml --host 0.0.0.0",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --forceExit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.500.0",
+    "@aws-sdk/client-eventbridge": "^3.500.0",
+    "@aws-sdk/client-sqs": "^3.500.0",
+    "@aws-sdk/lib-dynamodb": "^3.500.0",
+    "ioredis": "^5.3.0",
+    "mysql2": "^3.9.0",
+    "pokersolver": "^2.1.4",
+    "sequelize": "^6.37.0",
+    "serverless": "^3.39.0",
+    "serverless-offline": "^13.3.0",
+    "serverless-offline-sqs": "^8.0.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.js"]
+  }
+}

@@ -1,0 +1,23 @@
+service: cash-game-broadcast
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  memorySize: 1024
+  timeout: 30
+  environment:
+    STAGE: ${self:provider.stage}
+
+functions:
+  broadcastTableState:
+    handler: handler.main
+    events:
+      - eventBridge:
+          eventBus: poker-events
+          pattern:
+            detail-type:
+              - TABLE_UPDATE

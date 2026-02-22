@@ -1,0 +1,64 @@
+service: holdem-processor
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: local
+  region: us-east-1
+  timeout: 30
+  environment:
+    STAGE: local
+    MYSQL_HOST: ${env:MYSQL_HOST, 'localhost'}
+    MYSQL_PORT: ${env:MYSQL_PORT, '3306'}
+    MYSQL_USER: ${env:MYSQL_USER, 'hijack'}
+    MYSQL_PASSWORD: ${env:MYSQL_PASSWORD, 'hijack_dev'}
+    MYSQL_DATABASE: ${env:MYSQL_DATABASE, 'hijack_poker'}
+    REDIS_HOST: ${env:REDIS_HOST, 'localhost'}
+    REDIS_PORT: ${env:REDIS_PORT, '6379'}
+    SQS_ENDPOINT: ${env:SQS_ENDPOINT, 'http://localhost:9324'}
+    SQS_HOLDEM_QUEUE_URL: ${env:SQS_HOLDEM_QUEUE_URL, 'http://localhost:9324/000000000000/holdem-processor-queue'}
+    EVENTBRIDGE_ENDPOINT: ${env:EVENTBRIDGE_ENDPOINT, 'http://localhost:4010'}
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME, 'poker-events'}
+    DYNAMODB_ENDPOINT: ${env:DYNAMODB_ENDPOINT, 'http://localhost:8000'}
+    AWS_REGION_OVERRIDE: ${env:AWS_REGION, 'us-east-1'}
+    AWS_ACCESS_KEY_ID: ${env:AWS_ACCESS_KEY_ID, 'local'}
+    AWS_SECRET_ACCESS_KEY: ${env:AWS_SECRET_ACCESS_KEY, 'local'}
+
+functions:
+  processHand:
+    handler: handler.handler
+    events:
+      - sqs:
+          arn: arn:aws:sqs:us-east-1:000000000000:holdem-processor-queue
+          batchSize: 1
+
+  health:
+    handler: handler.health
+    events:
+      - httpApi:
+          path: /health
+          method: GET
+
+  processHandHttp:
+    handler: handler.processHandHttp
+    events:
+      - httpApi:
+          path: /process
+          method: POST
+
+  getTable:
+    handler: handler.getTableHttp
+    events:
+      - httpApi:
+          path: /table/{tableId}
+          method: GET
+
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3030
+    lambdaPort: 3031
