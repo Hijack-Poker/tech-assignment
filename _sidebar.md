@@ -1,5 +1,4 @@
 - [Home](README.md)
-- [Challenge Overview](challenge-overview.md)
 - [Local Development Guide](local-development.md)
 - **Challenge Options**
   - [A: Rewards Program](challenge-rewards.md)
