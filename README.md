@@ -1,6 +1,6 @@
 # Hijack Poker — Technical Assignment
 
-Welcome to the Hijack Poker technical challenge. This repo provides a working serverless infrastructure skeleton that mirrors our production architecture. Your job is to build one of three challenge options on top of it.
+Welcome to the Hijack Poker technical challenge. This repo provides a working serverless infrastructure skeleton that mirrors our production architecture. Your job is to build one of four challenge options on top of it.
 
 ## Prerequisites
 
