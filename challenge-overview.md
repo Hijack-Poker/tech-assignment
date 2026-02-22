@@ -4,7 +4,7 @@
 
 Welcome to the Hijack Poker engineering challenge. You'll build a feature against a skeleton repository that mirrors our production architecture. This challenge evaluates your ability to ship working software across a polyglot stack, using whatever tools — including AI — you see fit.
 
-Pick **one** of three feature options, each targeting a different part of the stack. All three are scoped to be achievable in roughly 30 hours of focused work.
+Pick **one** of four feature options, each targeting a different part of the stack. All four are scoped to be achievable in roughly 30 hours of focused work.
 
 ---
 
@@ -15,6 +15,7 @@ Pick **one** of three feature options, each targeting a different part of the st
 | **A** | [Rewards Program](challenge-rewards.md) | NestJS + React + DynamoDB | Backend-heavy, CRUD + business logic |
 | **B** | [Bomb Pots](challenge-bomb-pots.md) | Node.js + Lambda + SQS + Socket.IO | Real-time systems, event-driven |
 | **C** | [Daily Streaks](challenge-streaks.md) | React + Lambda + DynamoDB + REST API | Full-stack, frontend-heavy |
+| **D** | [Unity Game Client](challenge-unity-client.md) | Unity + C# + REST API | Frontend-heavy, game client |
 
 Read each option's document before choosing. Pick the one that best matches your strengths — we're evaluating depth, not breadth.
 
