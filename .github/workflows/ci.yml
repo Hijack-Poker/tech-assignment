@@ -20,6 +20,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install shared dependencies
+        run: npm install
+        working-directory: serverless-v2/shared
+
       - run: npm install
       - run: npm test
 
@@ -36,6 +40,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install shared dependencies
+        run: npm install
+        working-directory: serverless-v2/shared
+
       - run: npm install
       - run: npm test
 
@@ -51,6 +59,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Install shared dependencies
+        run: npm install
+        working-directory: serverless-v2/shared
 
       - run: npm install
       - run: npm test
