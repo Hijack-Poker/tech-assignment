@@ -63,7 +63,7 @@ docker compose --profile streaks up
 |---------|-----|
 | Holdem Processor health | http://localhost:3030/health |
 | Cash Game Broadcast health | http://localhost:3032/health |
-| Hand Viewer UI | Open `ui/index.html` (see [Hand Viewer](#hand-viewer-ui-option-b)) |
+| Hand Viewer UI | http://localhost:8080 |
 
 **Option C — Streaks:**
 
@@ -102,6 +102,7 @@ docker compose --profile <your-profile> down -v
 │                                                                  │
 │  engine:  core + ElasticMQ (SQS) + EventBridge Mock              │
 │           + Holdem Processor (:3030) + Broadcast (:3032)         │
+│           + Hand Viewer (:8080)                                  │
 │                                                                  │
 │  rewards: core + Rewards API (:5000) + React Frontend (:4000)    │
 │                                                                  │
@@ -149,14 +150,10 @@ A simple vanilla JS poker table UI is included for visualizing the hand processi
 
 ### Running the Hand Viewer
 
-```bash
-# Make sure the engine profile is running:
-docker compose --profile engine up -d
+The Hand Viewer is served automatically when running the `engine` profile:
 
-# Serve the UI (pick one):
-cd ui && python3 -m http.server 8080
-# or
-npx serve ui -l 8080
+```bash
+docker compose --profile engine up -d
 ```
 
 Then open http://localhost:8080.
@@ -311,6 +308,7 @@ Created by `scripts/init-dynamodb.sh` (also run by the `dynamodb-init` container
 | EventBridge Mock | 4010 | engine |
 | Holdem Processor | 3030 | engine |
 | Cash Game Broadcast | 3032 | engine |
+| Hand Viewer | 8080 (or `HAND_VIEWER_PORT`) | engine |
 | Rewards API | 5000 | rewards |
 | Rewards Frontend | 4000 | rewards |
 | Streaks API | 5001 | streaks |

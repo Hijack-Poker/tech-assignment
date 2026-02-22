@@ -276,6 +276,14 @@ services:
       - |
         npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
 
+  hand-viewer:
+    image: nginx:alpine
+    profiles: [engine]
+    ports:
+      - "${HAND_VIEWER_PORT:-8080}:80"
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro
+
   # ─── Rewards Profile (Option A) ──────────────────────────────────────
   rewards-api:
     image: node:22-alpine
