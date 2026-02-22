@@ -15,6 +15,7 @@ Welcome to the Hijack Poker technical challenge. This repo provides a working se
 | **A** | [Rewards System](https://hijack-poker.github.io/tech-assignment/#/challenge-rewards) | React + Serverless API + DynamoDB | `rewards` |
 | **B** | [Bomb Pots](https://hijack-poker.github.io/tech-assignment/#/challenge-bomb-pots) | Game Engine Pipeline (SQS → Lambda → EventBridge) | `engine` |
 | **C** | [Daily Streaks](https://hijack-poker.github.io/tech-assignment/#/challenge-streaks) | React + Serverless API + DynamoDB | `streaks` |
+| **D** | [Unity Game Client](https://hijack-poker.github.io/tech-assignment/#/challenge-unity-client) | Unity + C# + REST API | `engine` |
 
 Full challenge documentation: **https://hijack-poker.github.io/tech-assignment/**
 
@@ -70,6 +71,15 @@ docker compose --profile streaks up
 |---------|-----|
 | Streaks API health | http://localhost:5001/api/v1/health |
 | Streaks Frontend | http://localhost:4001 |
+
+**Option D — Unity Game Client:**
+
+| Service | URL |
+|---------|-----|
+| Holdem Processor health | http://localhost:3030/health |
+| Table state | http://localhost:3030/table/1 |
+
+> Option D uses the same `engine` Docker profile as Option B. The Unity app runs natively in the Unity Editor (not in Docker) and connects to the holdem-processor API. See `unity-client/README.md` for Unity project setup.
 
 ### 4. Stop everything
 

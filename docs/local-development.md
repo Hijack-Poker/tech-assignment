@@ -237,6 +237,60 @@ Same structure as rewards-api — see `streaks-api/src/routes/` for the stub end
 
 ---
 
+## Option D: Unity Game Client
+
+This option uses the same `engine` Docker profile as Option B for the backend API. The Unity application runs natively in the Unity Editor — not in a container.
+
+### Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| **holdem-processor** | 3030 | Processes poker hands step-by-step (same as Option B) |
+
+The Unity client communicates with the holdem-processor via three REST endpoints: `GET /health`, `POST /process`, and `GET /table/{tableId}`.
+
+### Setup
+
+```bash
+# 1. Start the engine backend
+docker compose --profile engine up -d
+
+# 2. Verify the API is running
+curl http://localhost:3030/health
+```
+
+Then in Unity:
+
+1. Create a new Unity project (2022.3+ LTS or Unity 6)
+2. Copy `unity-client/Scripts/` into your project's `Assets/Scripts/`
+3. Install Newtonsoft JSON: Window > Package Manager > Add by name > `com.unity.nuget.newtonsoft-json`
+4. Create a scene with a Canvas and add a `PokerApiClient` component to a GameObject
+5. Set the `Base Url` field to `http://localhost:3030` in the Inspector
+6. Hit Play, wire up a button to call `ProcessStepAsync` → `GetTableStateAsync`, and render the result
+
+### API Interaction
+
+The workflow is the same as the vanilla JS hand viewer (`ui/index.html`):
+
+1. Call `POST /process` with `{"tableId": 1}` to advance one step
+2. Call `GET /table/1` to fetch the updated state
+3. Render the game and player data in your Unity UI
+4. Repeat — after step 15 the next call starts a new hand automatically
+
+### Skeleton Scripts
+
+The `unity-client/Scripts/` directory contains starter C# files:
+
+| File | Purpose |
+|------|---------|
+| `Api/PokerApiClient.cs` | REST client stub with `TODO` methods to implement |
+| `Models/GameState.cs` | C# models for the game state, side pots, winners, and API response wrappers |
+| `Models/PlayerState.cs` | C# model for player state with status code constants |
+
+See `unity-client/README.md` for full setup instructions and API response documentation.
+
+---
+
 ## Working with the Code
 
 ### Code changes
