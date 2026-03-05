@@ -16,8 +16,8 @@
     "mysql2": "^3.9.0",
     "pokersolver": "^2.1.4",
     "sequelize": "^6.37.0",
-    "serverless": "^3.39.0",
-    "serverless-offline": "^13.3.0",
+    "serverless": "^4.33.0",
+    "serverless-offline": "^14.5.0",
     "serverless-offline-sqs": "^8.0.0",
     "winston": "^3.11.0"
   },
