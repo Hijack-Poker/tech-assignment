@@ -27,6 +27,8 @@ namespace HijackPoker.UI
         [Header("Visual")]
         [SerializeField] private Image _backgroundImage;
         [SerializeField] private Image _borderImage;
+        [SerializeField] private Image _avatarRingImage;
+        [SerializeField] private TextMeshProUGUI _avatarInitialText;
         [SerializeField] private CanvasGroup _canvasGroup;
 
         [Header("Chips")]
@@ -37,8 +39,6 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _handRankText;
         [SerializeField] private TextMeshProUGUI _winningsText;
 
-        [Header("Local Player")]
-        [SerializeField] private TextMeshProUGUI _youLabel;
 
         private static readonly Color NormalColor = new Color(0.04f, 0.09f, 0.14f, 0.9f);
         private static readonly Color PlayerColor = new Color(0.06f, 0.18f, 0.28f, 0.95f);
@@ -58,14 +58,17 @@ namespace HijackPoker.UI
             // Check if this seat belongs to the local player (seat 1)
             _isLocalPlayer = !string.IsNullOrEmpty(localPlayerName) && player.Seat == 1;
 
-            _nameText.text = player.Username;
+            _nameText.text = _isLocalPlayer
+                ? $"{localPlayerName} <size=10><color=#6EC6FF>(You)</color></size>"
+                : player.Username;
 
-            // Show player name above seat box for local player
-            if (_youLabel != null)
+            // Set avatar initial
+            if (_avatarInitialText != null)
             {
-                _youLabel.gameObject.SetActive(_isLocalPlayer);
-                if (_isLocalPlayer)
-                    _youLabel.text = localPlayerName;
+                string displayName = _isLocalPlayer ? localPlayerName : player.Username;
+                _avatarInitialText.text = !string.IsNullOrEmpty(displayName)
+                    ? displayName[0].ToString().ToUpper()
+                    : "?";
             }
             _betText.text = player.Bet > 0 ? MoneyFormatter.Format(player.Bet) : "";
             if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);

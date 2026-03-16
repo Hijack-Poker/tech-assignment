@@ -20,7 +20,7 @@ public static class RebuildScene
     static readonly Color TD = H("8DA4BC");
     static readonly Color SEAT_BG = H("0B1724", 0.9f);
     static readonly Color SEAT_BORDER = H("70B6D0", 0.25f);
-    static readonly Color CE = new Color(1, 1, 1, 0.06f);
+    static readonly Color CE = new Color(1, 1, 1, 0f);
     static readonly Color SHADOW = new Color(0, 0, 0, 0.56f);
 
     // Dealer palette
@@ -184,14 +184,6 @@ public static class RebuildScene
         var seatViews = new HijackPoker.UI.SeatView[6];
         for (int i = 0; i < 6; i++)
             seatViews[i] = BuildSeat(i + 1, cv.transform, seatPos[i]);
-
-        // "You" label above Seat 1 (bottom-right)
-        var youLabel = UI("YouLabel", cv.transform);
-        var youLabelTMP = youLabel.AddComponent<TextMeshProUGUI>();
-        youLabelTMP.text = "You"; youLabelTMP.fontSize = 18; youLabelTMP.fontStyle = FontStyles.Bold;
-        youLabelTMP.alignment = TextAlignmentOptions.Center; youLabelTMP.color = H("6EC6FF");
-        youLabelTMP.enableAutoSizing = false;
-        Rect(youLabel, 0.5f, 0.5f, 0.5f, 0.5f, seatPos[0] + new Vector2(0, 92), new Vector2(195, 28));
 
         var tableView = felt.AddComponent<HijackPoker.UI.TableView>();
 
@@ -359,9 +351,6 @@ public static class RebuildScene
         WArr(ctrlView, "_speedButtons", sBtns); WArr(ctrlView, "_speedButtonImages", sImgs);
         W(histView, "_stateManager", sm); W(histView, "_content", cnt.transform);
         W(histView, "_scrollRect", sr); W(histView, "_entryPrefab", pfb);
-        // Wire youLabel to seat 1 (local player)
-        W(seatViews[0], "_youLabel", youLabelTMP);
-
         // EventSystem
         if (!Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>())
         {
@@ -721,76 +710,109 @@ public static class RebuildScene
         armRRT.localRotation = Quaternion.Euler(0, 0, -20f);
     }
 
+    // Avatar colors per seat
+    static readonly Color[] AvatarColors = {
+        H("1E88E5"),  // Seat 1 — blue (You)
+        H("E53935"),  // Seat 2 — red
+        H("43A047"),  // Seat 3 — green
+        H("FB8C00"),  // Seat 4 — orange
+        H("8E24AA"),  // Seat 5 — purple
+        H("00ACC1"),  // Seat 6 — teal
+    };
+
     // ══════ SEAT ══════
     static HijackPoker.UI.SeatView BuildSeat(int n, Transform parent, Vector2 pos)
     {
         var root = UI($"Seat{n}", parent);
-        Rect(root, 0.5f, 0.5f, 0.5f, 0.5f, pos, new Vector2(195, 160));
+        Rect(root, 0.5f, 0.5f, 0.5f, 0.5f, pos, new Vector2(240, 220));
         var cg = root.AddComponent<CanvasGroup>();
 
-        // Border glow
+        // Border glow (invisible by default, lit up for local player / all-in)
         var brd = UI("Border", root.transform);
         var brdImg = brd.AddComponent<Image>();
-        brdImg.sprite = _roundRect;
-        brdImg.type = Image.Type.Sliced;
+        brdImg.sprite = _oval;
         brdImg.color = Color.clear;
-        Stretch(brd);
+        var brdRT = brd.GetComponent<RectTransform>();
+        brdRT.anchorMin = brdRT.anchorMax = new Vector2(0.5f, 0.68f);
+        brdRT.sizeDelta = new Vector2(144, 144);
 
-        // Rounded background
-        var bg = UI("Bg", root.transform);
-        var bgImg = bg.AddComponent<Image>();
-        bgImg.sprite = _roundRect; bgImg.type = Image.Type.Sliced;
+        // ── Circular Avatar ──
+        var avatarRing = UI("AvatarRing", root.transform);
+        var ringImg = avatarRing.AddComponent<Image>();
+        ringImg.sprite = _oval;
+        ringImg.color = AvatarColors[(n - 1) % AvatarColors.Length];
+        var ringRT = avatarRing.GetComponent<RectTransform>();
+        ringRT.anchorMin = ringRT.anchorMax = new Vector2(0.5f, 0.68f);
+        ringRT.sizeDelta = new Vector2(136, 136);
+
+        var avatarBg = UI("AvatarBg", avatarRing.transform);
+        var bgImg = avatarBg.AddComponent<Image>();
+        bgImg.sprite = _oval;
         bgImg.color = SEAT_BG;
-        var bgRT = bg.GetComponent<RectTransform>();
-        bgRT.anchorMin = Vector2.zero; bgRT.anchorMax = Vector2.one;
-        bgRT.offsetMin = Vector2.zero; bgRT.offsetMax = Vector2.zero;
+        var bgRT = avatarBg.GetComponent<RectTransform>();
+        bgRT.anchorMin = bgRT.anchorMax = new Vector2(0.5f, 0.5f);
+        bgRT.sizeDelta = new Vector2(124, 124);
 
-        // Subtle border
-        var borderLine = UI("BorderLine", root.transform);
-        var blImg = borderLine.AddComponent<Image>();
-        blImg.sprite = _roundRect; blImg.type = Image.Type.Sliced;
-        blImg.color = SEAT_BORDER;
-        var blRT = borderLine.GetComponent<RectTransform>();
-        blRT.anchorMin = Vector2.zero; blRT.anchorMax = Vector2.one;
-        blRT.offsetMin = new Vector2(-1, -1); blRT.offsetMax = new Vector2(1, 1);
-        borderLine.transform.SetAsFirstSibling(); // behind bg
+        // Avatar initial letter (placeholder until real avatars)
+        var avatarInitial = UI("AvatarInitial", avatarBg.transform);
+        var aiT = avatarInitial.AddComponent<TextMeshProUGUI>();
+        aiT.text = "?"; aiT.fontSize = 48; aiT.fontStyle = FontStyles.Bold;
+        aiT.alignment = TextAlignmentOptions.Center; aiT.color = AvatarColors[(n - 1) % AvatarColors.Length];
+        Stretch(avatarInitial);
 
-        // Name
+        // Avatar image slot (for future avatar sprites)
+        var avatarImg = UI("AvatarImage", avatarBg.transform);
+        var avImg = avatarImg.AddComponent<Image>();
+        avImg.color = new Color(1, 1, 1, 0); // invisible until set
+        avImg.preserveAspect = true;
+        Stretch(avatarImg);
+
+        // Name — positioned ABOVE the avatar
         var nm = UI("Name", root.transform);
         var nmT = nm.AddComponent<TextMeshProUGUI>();
-        nmT.fontSize = 14; nmT.fontStyle = FontStyles.Bold;
+        nmT.fontSize = 13; nmT.fontStyle = FontStyles.Bold;
         nmT.alignment = TextAlignmentOptions.Center; nmT.color = TW;
-        Anch(nm, 0.05f, 0.82f, 0.95f, 0.97f, Vector2.zero, Vector2.zero);
+        var nmRT = nm.GetComponent<RectTransform>();
+        nmRT.anchorMin = new Vector2(0, 1); nmRT.anchorMax = new Vector2(1, 1);
+        nmRT.pivot = new Vector2(0.5f, 0);
+        nmRT.anchoredPosition = new Vector2(0, 4);
+        nmRT.sizeDelta = new Vector2(0, 20);
 
-        // Stack
+        // Stack — below avatar
         var sk = UI("Stack", root.transform);
         var skT = sk.AddComponent<TextMeshProUGUI>();
         skT.fontSize = 12; skT.alignment = TextAlignmentOptions.Center;
         skT.color = H("78DFA6");
-        Anch(sk, 0.05f, 0.69f, 0.95f, 0.82f, Vector2.zero, Vector2.zero);
+        var skRT = sk.GetComponent<RectTransform>();
+        skRT.anchorMin = new Vector2(0.05f, 0.26f); skRT.anchorMax = new Vector2(0.95f, 0.38f);
+        skRT.offsetMin = skRT.offsetMax = Vector2.zero;
 
-        // Cards - overlapping with rotation
+        // Cards — positioned OUTSIDE to the LEFT of the avatar
         var ca = UI("Cards", root.transform);
-        Anch(ca, 0.05f, 0.18f, 0.95f, 0.69f, Vector2.zero, Vector2.zero);
+        var caRT = ca.GetComponent<RectTransform>();
+        caRT.anchorMin = new Vector2(0, 0.5f); caRT.anchorMax = new Vector2(0, 0.5f);
+        caRT.pivot = new Vector2(1, 0.5f);
+        caRT.anchoredPosition = new Vector2(-8, 8);
+        caRT.sizeDelta = new Vector2(65, 85);
 
         // Card shadows
         var s1 = UI("Shadow1", ca.transform);
         var s1Img = s1.AddComponent<Image>(); s1Img.color = SHADOW;
         var s1RT = s1.GetComponent<RectTransform>();
         s1RT.anchorMin = s1RT.anchorMax = new Vector2(0.5f, 0.5f);
-        s1RT.anchoredPosition = new Vector2(-13, -3); s1RT.sizeDelta = new Vector2(52, 72);
-        s1RT.localRotation = Quaternion.Euler(0, 0, -5f);
+        s1RT.anchoredPosition = new Vector2(-4, -3); s1RT.sizeDelta = new Vector2(44, 62);
+        s1RT.localRotation = Quaternion.Euler(0, 0, -8f);
 
         var s2 = UI("Shadow2", ca.transform);
         var s2Img = s2.AddComponent<Image>(); s2Img.color = SHADOW;
         var s2RT = s2.GetComponent<RectTransform>();
         s2RT.anchorMin = s2RT.anchorMax = new Vector2(0.5f, 0.5f);
-        s2RT.anchoredPosition = new Vector2(17, -1); s2RT.sizeDelta = new Vector2(52, 72);
-        s2RT.localRotation = Quaternion.Euler(0, 0, 5f);
+        s2RT.anchoredPosition = new Vector2(8, -1); s2RT.sizeDelta = new Vector2(44, 62);
+        s2RT.localRotation = Quaternion.Euler(0, 0, 8f);
 
         // Cards
-        var c1 = ManualCard("C1", ca.transform, 52, 72, new Vector2(-15, 0), -5f);
-        var c2 = ManualCard("C2", ca.transform, 52, 72, new Vector2(15, 2), 5f);
+        var c1 = ManualCard("C1", ca.transform, 44, 62, new Vector2(-6, 0), -8f);
+        var c2 = ManualCard("C2", ca.transform, 44, 62, new Vector2(6, 2), 8f);
 
         // Stack chip visualization (player stack amount)
         var stackChips = UI("StackChips", root.transform);
@@ -819,26 +841,26 @@ public static class RebuildScene
         var bt = UI("Bet", root.transform);
         var btT = bt.AddComponent<TextMeshProUGUI>();
         btT.fontSize = 11; btT.alignment = TextAlignmentOptions.Center; btT.color = H("F8D98B");
-        Anch(bt, 0, 0.04f, 1, 0.18f, new Vector2(4, 0), new Vector2(-4, 0));
+        Anch(bt, 0, 0.12f, 1, 0.26f, new Vector2(4, 0), new Vector2(-4, 0));
 
         // Action
         var at = UI("Act", root.transform);
         var atT = at.AddComponent<TextMeshProUGUI>();
         atT.fontSize = 10; atT.alignment = TextAlignmentOptions.Center; atT.color = Color.white;
-        Anch(at, 0, -0.06f, 0.5f, 0.06f, Vector2.zero, Vector2.zero);
+        Anch(at, 0, 0.02f, 0.5f, 0.14f, Vector2.zero, Vector2.zero);
 
         // Hand rank
         var rk = UI("Rank", root.transform);
         var rkT = rk.AddComponent<TextMeshProUGUI>();
         rkT.fontSize = 10; rkT.alignment = TextAlignmentOptions.Center; rkT.color = H("6EC6FF");
-        Anch(rk, 0.5f, -0.06f, 1, 0.06f, Vector2.zero, Vector2.zero);
+        Anch(rk, 0.5f, 0.02f, 1, 0.14f, Vector2.zero, Vector2.zero);
 
         // Winnings
         var wn = UI("Win", root.transform);
         var wnT = wn.AddComponent<TextMeshProUGUI>();
         wnT.fontSize = 13; wnT.fontStyle = FontStyles.Bold;
         wnT.alignment = TextAlignmentOptions.Center; wnT.color = H("74E89D");
-        Anch(wn, 0, -0.18f, 1, -0.04f, Vector2.zero, Vector2.zero);
+        Anch(wn, 0, -0.10f, 1, 0.04f, Vector2.zero, Vector2.zero);
 
         // Badges
         var db = Badge("D", root.transform, GOLD);
@@ -860,6 +882,8 @@ public static class RebuildScene
         so.FindProperty("_card2").objectReferenceValue = c2;
         so.FindProperty("_backgroundImage").objectReferenceValue = bgImg;
         so.FindProperty("_borderImage").objectReferenceValue = brdImg;
+        so.FindProperty("_avatarRingImage").objectReferenceValue = ringImg;
+        so.FindProperty("_avatarInitialText").objectReferenceValue = aiT;
         so.FindProperty("_canvasGroup").objectReferenceValue = cg;
         so.FindProperty("_betChipImage").objectReferenceValue = betChipImg;
         so.FindProperty("_chipStackView").objectReferenceValue = chipStackView;
