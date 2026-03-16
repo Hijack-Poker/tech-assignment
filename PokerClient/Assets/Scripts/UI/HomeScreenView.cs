@@ -19,11 +19,12 @@ namespace HijackPoker.UI
         [SerializeField] private CanvasGroup _nameInputGroup;
         [SerializeField] private Image _fadeOverlay;
 
-        private static readonly Color DisabledBtn = new Color(0.25f, 0.25f, 0.25f);
-        private static readonly Color EnabledBtn = new Color(0.18f, 0.49f, 0.20f); // G_BTN
+        private static readonly Color DisabledBtn = new Color(0.20f, 0.25f, 0.32f);
+        private static readonly Color EnabledBtn = new Color(0.09f, 0.64f, 0.43f);
 
         private Sequence _entranceSeq;
         private Tween _buttonPulse;
+        private Tween _buttonColorTween;
         private Tween _cardFloat;
         private bool _transitioning;
 
@@ -90,7 +91,8 @@ namespace HijackPoker.UI
         {
             bool hasName = !string.IsNullOrWhiteSpace(value);
             _playButton.interactable = hasName;
-            _playButtonImage.color = hasName ? EnabledBtn : DisabledBtn;
+            _buttonColorTween?.Kill();
+            _buttonColorTween = TweenImageColor(_playButtonImage, hasName ? EnabledBtn : DisabledBtn, 0.2f);
 
             if (hasName && _buttonPulse == null)
                 StartButtonPulse();
@@ -141,6 +143,7 @@ namespace HijackPoker.UI
         {
             _entranceSeq?.Kill();
             _buttonPulse?.Kill();
+            _buttonColorTween?.Kill();
             _cardFloat?.Kill();
         }
 
@@ -163,6 +166,11 @@ namespace HijackPoker.UI
                 c.a = v;
                 img.color = c;
             }, to, dur).SetEase(Ease.OutQuad);
+        }
+
+        private static Tween TweenImageColor(Image img, Color to, float dur)
+        {
+            return DOTween.To(() => img.color, v => img.color = v, to, dur).SetEase(Ease.OutQuad);
         }
     }
 }

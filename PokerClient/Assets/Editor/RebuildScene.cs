@@ -7,23 +7,20 @@ using System.IO;
 
 public static class RebuildScene
 {
-    static readonly Color BG = H("2A1215");
-    static readonly Color FELT = H("1B6B35");
-    static readonly Color FELT_L = H("237A42");
-    static readonly Color RAIL_O = H("1A0A05");
-    static readonly Color RAIL_I = H("5C3A1E");
-    static readonly Color PANEL = H("12080A", 0.96f);
-    static readonly Color GOLD = H("FFD700");
-    static readonly Color G_BTN = H("2E7D32");
-    static readonly Color B_BTN = H("1565C0");
-    static readonly Color GR_BTN = H("3E2C2C");
-    static readonly Color ORANGE = H("FFB347");
-    static readonly Color TW = H("F0F0F0");
-    static readonly Color TD = H("999999");
-    static readonly Color SEAT_BG = H("0D0D1A", 0.85f);
-    static readonly Color SEAT_BORDER = H("44446A", 0.4f);
-    static readonly Color CE = new Color(1, 1, 1, 0.04f);
-    static readonly Color SHADOW = new Color(0, 0, 0, 0.5f);
+    static readonly Color BG = H("07121E");
+    static readonly Color FELT = H("175C4A");
+    static readonly Color FELT_L = H("21836A");
+    static readonly Color RAIL_O = H("0A111A");
+    static readonly Color RAIL_I = H("29495A");
+    static readonly Color PANEL = H("0A1624", 0.95f);
+    static readonly Color GOLD = H("F4C86E");
+    static readonly Color ORANGE = H("F0AE63");
+    static readonly Color TW = H("EBF4FF");
+    static readonly Color TD = H("8DA4BC");
+    static readonly Color SEAT_BG = H("0B1724", 0.9f);
+    static readonly Color SEAT_BORDER = H("70B6D0", 0.25f);
+    static readonly Color CE = new Color(1, 1, 1, 0.06f);
+    static readonly Color SHADOW = new Color(0, 0, 0, 0.56f);
 
     // Dealer palette
     static readonly Color SKIN = H("D4A574");
@@ -76,6 +73,7 @@ public static class RebuildScene
         OvalImg("RailInner", cv.transform, RAIL_I, TC, 1180, 675);
         var felt = OvalImg("TableFelt", cv.transform, FELT, TC, 1120, 630);
         OvalImg("FeltHighlight", cv.transform, FELT_L, TC, 900, 470);
+        OvalImg("FeltAura", cv.transform, H("33B7A1", 0.08f), TC + new Vector2(0, -20), 1040, 560);
 
         // ══════ DEALER ══════
         BuildDealer(cv.transform, TC + new Vector2(0, 418));
@@ -165,13 +163,18 @@ public static class RebuildScene
         var acT = ac.AddComponent<TextMeshProUGUI>();
         acT.fontSize = 12; acT.alignment = TextAlignmentOptions.Right; acT.color = TD;
         Anch(ac, 0.75f, 0, 1, 1, Vector2.zero, new Vector2(-16, 0));
+
+        var hudBorder = UI("HudBottomBorder", hud.transform);
+        var hudBorderImg = hudBorder.AddComponent<Image>();
+        hudBorderImg.color = H("78C6D6", 0.2f);
+        Anch(hudBorder, 0, 0, 1, 0, Vector2.zero, new Vector2(0, 1));
         var hudView = hud.AddComponent<HijackPoker.UI.HudView>();
 
         // ══════ CONTROLS ══════
         var ctrl = UI("ControlsPanel", cv.transform);
         var ctrlBg = ctrl.AddComponent<Image>();
         ctrlBg.sprite = _roundRect; ctrlBg.type = Image.Type.Sliced;
-        ctrlBg.color = H("0D0D14", 0.97f);
+        ctrlBg.color = H("0B1623", 0.97f);
         var ctrlRT = ctrl.GetComponent<RectTransform>();
         ctrlRT.anchorMin = new Vector2(0, 0); ctrlRT.anchorMax = new Vector2(1, 0);
         ctrlRT.pivot = new Vector2(0.5f, 0);
@@ -180,7 +183,7 @@ public static class RebuildScene
         // Top border line (subtle gold accent)
         var ctrlBorder = UI("CtrlBorder", ctrl.transform);
         var ctrlBorderImg = ctrlBorder.AddComponent<Image>();
-        ctrlBorderImg.color = H("FFD700", 0.15f);
+        ctrlBorderImg.color = H("7AD0DD", 0.24f);
         Anch(ctrlBorder, 0, 1, 1, 1, Vector2.zero, new Vector2(0, 1));
 
         var ctrlHLG = ctrl.AddComponent<HorizontalLayoutGroup>();
@@ -190,11 +193,11 @@ public static class RebuildScene
 
         // ── Next Step button (green gradient style) ──
         var nb = FancyBtn("NextStepButton", "NEXT STEP", ctrl.transform, 160, 70,
-            H("2E7D32"), H("3CA042"), H("246B28"));
+            H("1F8E67"), H("3FBE95"), H("176749"));
 
         // ── Auto Play button (blue gradient style) ──
         var ab = FancyBtn("AutoPlayButton", "AUTO PLAY", ctrl.transform, 160, 70,
-            H("1565C0"), H("1E88E5"), H("0D47A1"));
+            H("1D79D8"), H("53A8F8"), H("155BA6"));
         var abTxt = ab.GetComponentInChildren<TextMeshProUGUI>();
 
         // ── Separator ──
@@ -207,7 +210,7 @@ public static class RebuildScene
         var spdLabel = UI("SpeedLabel", ctrl.transform);
         var spdLabelTMP = spdLabel.AddComponent<TextMeshProUGUI>();
         spdLabelTMP.text = "SPEED"; spdLabelTMP.fontSize = 9; spdLabelTMP.fontStyle = FontStyles.Bold;
-        spdLabelTMP.alignment = TextAlignmentOptions.Center; spdLabelTMP.color = H("888888");
+        spdLabelTMP.alignment = TextAlignmentOptions.Center; spdLabelTMP.color = H("8EA4BA");
         spdLabelTMP.characterSpacing = 3;
         spdLabel.AddComponent<LayoutElement>().preferredWidth = 42;
 
@@ -215,7 +218,7 @@ public static class RebuildScene
         var sg = UI("SpeedGroup", ctrl.transform);
         var sgBg = sg.AddComponent<Image>();
         sgBg.sprite = _roundRect; sgBg.type = Image.Type.Sliced;
-        sgBg.color = H("1A1A2A");
+        sgBg.color = H("0F2132");
         var sgH = sg.AddComponent<HorizontalLayoutGroup>();
         sgH.spacing = 2; sgH.childAlignment = TextAnchor.MiddleCenter;
         sgH.padding = new RectOffset(3, 3, 3, 3);
@@ -236,7 +239,7 @@ public static class RebuildScene
         var hist = UI("HistoryPanel", cv.transform);
         var histBg = hist.AddComponent<Image>();
         histBg.sprite = _roundRect; histBg.type = Image.Type.Sliced;
-        histBg.color = H("0E0508", 0.94f);
+        histBg.color = H("0A1623", 0.94f);
         var histRT = hist.GetComponent<RectTransform>();
         histRT.anchorMin = new Vector2(1, 0); histRT.anchorMax = new Vector2(1, 1);
         histRT.pivot = new Vector2(1, 0.5f);
@@ -249,11 +252,11 @@ public static class RebuildScene
         var hdr = UI("Header", hist.transform);
         var hdrT = hdr.AddComponent<TextMeshProUGUI>();
         hdrT.text = "HAND HISTORY"; hdrT.fontSize = 11; hdrT.fontStyle = FontStyles.Bold;
-        hdrT.alignment = TextAlignmentOptions.Center; hdrT.color = TD; hdrT.characterSpacing = 4;
+        hdrT.alignment = TextAlignmentOptions.Center; hdrT.color = H("9BB2C8"); hdrT.characterSpacing = 4;
         hdr.AddComponent<LayoutElement>().preferredHeight = 22;
 
         var dv = UI("Div", hist.transform);
-        dv.AddComponent<Image>().color = new Color(1, 1, 1, 0.06f);
+        dv.AddComponent<Image>().color = H("7CC9D6", 0.18f);
         dv.AddComponent<LayoutElement>().preferredHeight = 1;
 
         var scr = UI("Scroll", hist.transform);
@@ -656,7 +659,10 @@ public static class RebuildScene
 
         // Border glow
         var brd = UI("Border", root.transform);
-        var brdImg = brd.AddComponent<Image>(); brdImg.color = Color.clear;
+        var brdImg = brd.AddComponent<Image>();
+        brdImg.sprite = _roundRect;
+        brdImg.type = Image.Type.Sliced;
+        brdImg.color = Color.clear;
         Stretch(brd);
 
         // Rounded background
@@ -689,7 +695,7 @@ public static class RebuildScene
         var sk = UI("Stack", root.transform);
         var skT = sk.AddComponent<TextMeshProUGUI>();
         skT.fontSize = 12; skT.alignment = TextAlignmentOptions.Center;
-        skT.color = H("88DD88");
+        skT.color = H("78DFA6");
         Anch(sk, 0.05f, 0.69f, 0.95f, 0.82f, Vector2.zero, Vector2.zero);
 
         // Cards - overlapping with rotation
@@ -715,6 +721,19 @@ public static class RebuildScene
         var c1 = ManualCard("C1", ca.transform, 52, 72, new Vector2(-15, 0), -5f);
         var c2 = ManualCard("C2", ca.transform, 52, 72, new Vector2(15, 2), 5f);
 
+        // Stack chip visualization (player stack amount)
+        var stackChips = UI("StackChips", root.transform);
+        var scRT = stackChips.GetComponent<RectTransform>();
+        scRT.anchorMin = scRT.anchorMax = new Vector2(0.16f, 0.49f);
+        scRT.sizeDelta = new Vector2(78, 76);
+        var chipStackView = stackChips.AddComponent<HijackPoker.UI.ChipStackView>();
+        var csvSo = new SerializedObject(chipStackView);
+        var csvSprites = csvSo.FindProperty("_chipSprites");
+        csvSprites.arraySize = _chipSprites.Length;
+        for (int i = 0; i < _chipSprites.Length; i++)
+            csvSprites.GetArrayElementAtIndex(i).objectReferenceValue = _chipSprites[i];
+        csvSo.ApplyModifiedPropertiesWithoutUndo();
+
         // Bet chip
         var betChip = UI("BetChip", root.transform);
         var betChipImg = betChip.AddComponent<Image>();
@@ -728,7 +747,7 @@ public static class RebuildScene
         // Bet
         var bt = UI("Bet", root.transform);
         var btT = bt.AddComponent<TextMeshProUGUI>();
-        btT.fontSize = 11; btT.alignment = TextAlignmentOptions.Center; btT.color = GOLD;
+        btT.fontSize = 11; btT.alignment = TextAlignmentOptions.Center; btT.color = H("F8D98B");
         Anch(bt, 0, 0.04f, 1, 0.18f, new Vector2(4, 0), new Vector2(-4, 0));
 
         // Action
@@ -740,14 +759,14 @@ public static class RebuildScene
         // Hand rank
         var rk = UI("Rank", root.transform);
         var rkT = rk.AddComponent<TextMeshProUGUI>();
-        rkT.fontSize = 10; rkT.alignment = TextAlignmentOptions.Center; rkT.color = H("4FC3F7");
+        rkT.fontSize = 10; rkT.alignment = TextAlignmentOptions.Center; rkT.color = H("6EC6FF");
         Anch(rk, 0.5f, -0.06f, 1, 0.06f, Vector2.zero, Vector2.zero);
 
         // Winnings
         var wn = UI("Win", root.transform);
         var wnT = wn.AddComponent<TextMeshProUGUI>();
         wnT.fontSize = 13; wnT.fontStyle = FontStyles.Bold;
-        wnT.alignment = TextAlignmentOptions.Center; wnT.color = H("66BB6A");
+        wnT.alignment = TextAlignmentOptions.Center; wnT.color = H("74E89D");
         Anch(wn, 0, -0.18f, 1, -0.04f, Vector2.zero, Vector2.zero);
 
         // Badges
@@ -772,6 +791,7 @@ public static class RebuildScene
         so.FindProperty("_borderImage").objectReferenceValue = brdImg;
         so.FindProperty("_canvasGroup").objectReferenceValue = cg;
         so.FindProperty("_betChipImage").objectReferenceValue = betChipImg;
+        so.FindProperty("_chipStackView").objectReferenceValue = chipStackView;
         so.FindProperty("_handRankText").objectReferenceValue = rkT;
         so.FindProperty("_winningsText").objectReferenceValue = wnT;
         so.ApplyModifiedProperties();
@@ -886,7 +906,7 @@ public static class RebuildScene
         // Main background
         var img = go.AddComponent<Image>();
         img.sprite = _roundRect; img.type = Image.Type.Sliced; img.color = bgMain;
-        go.AddComponent<Button>();
+        var button = go.AddComponent<Button>();
         var le = go.AddComponent<LayoutElement>(); le.preferredWidth = w; le.preferredHeight = h;
 
         // Top highlight (simulates gradient)
@@ -913,23 +933,48 @@ public static class RebuildScene
         var glow = UI("Glow", go.transform);
         var glowImg = glow.AddComponent<Image>();
         glowImg.sprite = _roundRect; glowImg.type = Image.Type.Sliced;
-        glowImg.color = new Color(1, 1, 1, 0.08f);
+        glowImg.color = new Color(1, 1, 1, 0.12f);
         glowImg.raycastTarget = false;
         var glowRT = glow.GetComponent<RectTransform>();
         glowRT.anchorMin = new Vector2(0.1f, 0.7f); glowRT.anchorMax = new Vector2(0.9f, 0.95f);
         glowRT.offsetMin = glowRT.offsetMax = Vector2.zero;
+
+        var stroke = UI("Stroke", go.transform);
+        var strokeImg = stroke.AddComponent<Image>();
+        strokeImg.sprite = _roundRect; strokeImg.type = Image.Type.Sliced;
+        strokeImg.color = H("B8E5FF", 0.22f);
+        strokeImg.raycastTarget = false;
+        var strokeRT = stroke.GetComponent<RectTransform>();
+        strokeRT.anchorMin = Vector2.zero; strokeRT.anchorMax = Vector2.one;
+        strokeRT.offsetMin = new Vector2(-1, -1); strokeRT.offsetMax = new Vector2(1, 1);
 
         // Text
         var txt = new GameObject("T", typeof(RectTransform));
         txt.transform.SetParent(go.transform, false);
         var tmp = txt.AddComponent<TextMeshProUGUI>();
         tmp.text = label; tmp.fontSize = 14; tmp.fontStyle = FontStyles.Bold;
-        tmp.alignment = TextAlignmentOptions.Center; tmp.color = Color.white;
+        tmp.alignment = TextAlignmentOptions.Center; tmp.color = H("F3FBFF");
         tmp.enableAutoSizing = false;
-        tmp.characterSpacing = 2;
+        tmp.characterSpacing = 2.5f;
         Stretch(txt);
         var txtRT = txt.GetComponent<RectTransform>();
         txtRT.offsetMin = new Vector2(4, 0); txtRT.offsetMax = new Vector2(-4, 0);
+
+        var textShadow = txt.AddComponent<Shadow>();
+        textShadow.effectColor = new Color(0f, 0f, 0f, 0.28f);
+        textShadow.effectDistance = new Vector2(0f, -1f);
+        textShadow.useGraphicAlpha = true;
+
+        var colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(0.95f, 1f, 0.97f, 1f);
+        colors.pressedColor = new Color(0.85f, 0.94f, 0.89f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(0.64f, 0.72f, 0.8f, 0.88f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+        button.transition = Selectable.Transition.ColorTint;
 
         return go;
     }
@@ -940,15 +985,15 @@ public static class RebuildScene
         go.transform.SetParent(parent, false);
         var img = go.AddComponent<Image>();
         img.sprite = _roundRect; img.type = Image.Type.Sliced;
-        img.color = H("2A2A3A"); // inactive state
-        go.AddComponent<Button>();
+        img.color = H("223247"); // inactive state
+        var button = go.AddComponent<Button>();
         var le = go.AddComponent<LayoutElement>(); le.preferredWidth = w; le.preferredHeight = h;
 
         // Hover highlight layer
         var hl = UI("HL", go.transform);
         var hlImg = hl.AddComponent<Image>();
         hlImg.sprite = _roundRect; hlImg.type = Image.Type.Sliced;
-        hlImg.color = new Color(1, 1, 1, 0.03f);
+        hlImg.color = new Color(1, 1, 1, 0.06f);
         hlImg.raycastTarget = false;
         var hlRT = hl.GetComponent<RectTransform>();
         hlRT.anchorMin = Vector2.zero; hlRT.anchorMax = Vector2.one;
@@ -959,8 +1004,19 @@ public static class RebuildScene
         txt.transform.SetParent(go.transform, false);
         var tmp = txt.AddComponent<TextMeshProUGUI>();
         tmp.text = label; tmp.fontSize = 12; tmp.fontStyle = FontStyles.Normal;
-        tmp.alignment = TextAlignmentOptions.Center; tmp.color = H("BBBBCC");
+        tmp.alignment = TextAlignmentOptions.Center; tmp.color = H("BFD2E3");
         Stretch(txt);
+
+        var colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(0.92f, 0.97f, 1f, 1f);
+        colors.pressedColor = new Color(0.82f, 0.9f, 0.98f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(0.62f, 0.68f, 0.78f, 0.85f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+        button.transition = Selectable.Transition.ColorTint;
 
         return go;
     }
@@ -991,7 +1047,7 @@ public static class RebuildScene
         var t = new GameObject("T", typeof(RectTransform));
         t.transform.SetParent(go.transform, false);
         var tmp = t.AddComponent<TextMeshProUGUI>();
-        tmp.fontSize = 11; tmp.color = TD;
+        tmp.fontSize = 11; tmp.color = H("9EB3C8");
         tmp.alignment = TextAlignmentOptions.Left;
         tmp.enableWordWrapping = true; tmp.richText = true;
         Stretch(t);

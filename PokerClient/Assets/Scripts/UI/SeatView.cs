@@ -31,14 +31,15 @@ namespace HijackPoker.UI
 
         [Header("Chips")]
         [SerializeField] private Image _betChipImage;
+        [SerializeField] private ChipStackView _chipStackView;
 
         [Header("Winner")]
         [SerializeField] private TextMeshProUGUI _handRankText;
         [SerializeField] private TextMeshProUGUI _winningsText;
 
-        private static readonly Color NormalColor = new Color(0.12f, 0.12f, 0.2f, 0.9f);
-        private static readonly Color AllInColor = new Color(0.8f, 0.6f, 0f);
-        private static readonly Color GoldColor = new Color(1f, 0.84f, 0f);
+        private static readonly Color NormalColor = new Color(0.04f, 0.09f, 0.14f, 0.9f);
+        private static readonly Color AllInColor = new Color(0.96f, 0.69f, 0.28f);
+        private static readonly Color GoldColor = new Color(0.96f, 0.79f, 0.45f);
 
         private Tweener _winnerPulseTween;
         private float _displayedStack;
@@ -50,6 +51,7 @@ namespace HijackPoker.UI
             _nameText.text = player.Username;
             _betText.text = player.Bet > 0 ? MoneyFormatter.Format(player.Bet) : "";
             if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);
+            if (_chipStackView != null) _chipStackView.Render(player.Stack);
             _actionText.text = player.Action?.ToUpper() ?? "";
 
             // Stack tween
@@ -94,7 +96,7 @@ namespace HijackPoker.UI
                     .SetEase(Ease.InOutSine);
 
                 _winningsText.text = MoneyFormatter.FormatGain(player.Winnings);
-                _winningsText.color = new Color(0.4f, 0.87f, 0.4f);
+                _winningsText.color = new Color(0.45f, 0.91f, 0.61f);
                 _winningsText.transform.localScale = Vector3.zero;
                 _winningsText.transform.DOScale(1f, 0.3f).SetEase(Ease.OutBack);
             }
@@ -113,6 +115,7 @@ namespace HijackPoker.UI
             _backgroundImage.color = NormalColor;
             _displayedStack = 0f;
             DOTween.Kill(_stackText);
+            if (_chipStackView != null) _chipStackView.Clear();
             gameObject.SetActive(false);
         }
 

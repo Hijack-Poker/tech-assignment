@@ -17,10 +17,10 @@ namespace HijackPoker.UI
         [SerializeField] private Button[] _speedButtons;
         [SerializeField] private Image[] _speedButtonImages;
 
-        private static readonly Color SelectedSpeedColor = new Color(0.2f, 0.6f, 1f);
-        private static readonly Color DefaultSpeedColor = new Color(0.25f, 0.25f, 0.35f);
-        private static readonly Color AutoPlayActiveColor = new Color(0.9f, 0.3f, 0.3f);
-        private static readonly Color AutoPlayIdleColor = new Color(0.13f, 0.59f, 0.95f);
+        private static readonly Color SelectedSpeedColor = new Color(0.17f, 0.55f, 0.92f);
+        private static readonly Color DefaultSpeedColor = new Color(0.13f, 0.20f, 0.28f);
+        private static readonly Color AutoPlayActiveColor = new Color(0.86f, 0.36f, 0.35f);
+        private static readonly Color AutoPlayIdleColor = new Color(0.12f, 0.49f, 0.86f);
 
         private int _selectedSpeedIndex = 2;
 
