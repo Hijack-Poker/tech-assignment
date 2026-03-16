@@ -6,3 +6,17 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# Unity
+PokerClient/[Ll]ibrary/
+PokerClient/[Tt]emp/
+PokerClient/[Oo]bj/
+PokerClient/[Bb]uild/
+PokerClient/[Bb]uilds/
+PokerClient/[Ll]ogs/
+PokerClient/[Uu]ser[Ss]ettings/
+PokerClient/.vs/
+PokerClient/**/*.pidb
+PokerClient/**/*.suo
+PokerClient/**/*.csproj
+PokerClient/**/*.sln
