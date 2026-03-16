@@ -7,6 +7,7 @@ namespace HijackPoker.UI
     public class TableView : MonoBehaviour
     {
         [SerializeField] private TableStateManager _stateManager;
+        [SerializeField] private GameManager _gameManager;
         [SerializeField] private SeatView[] _seatViews;
         [SerializeField] private CommunityCardsView _communityCardsView;
 
@@ -15,6 +16,8 @@ namespace HijackPoker.UI
 
         private void OnStateChanged(TableResponse state)
         {
+            string localName = _gameManager != null ? _gameManager.PlayerName : null;
+
             foreach (var seat in _seatViews)
                 seat.Clear();
 
@@ -22,7 +25,7 @@ namespace HijackPoker.UI
             {
                 int idx = player.Seat - 1;
                 if (idx >= 0 && idx < _seatViews.Length)
-                    _seatViews[idx].Render(player, state.Game);
+                    _seatViews[idx].Render(player, state.Game, localName);
             }
 
             _communityCardsView.Refresh(state.Game.CommunityCards);

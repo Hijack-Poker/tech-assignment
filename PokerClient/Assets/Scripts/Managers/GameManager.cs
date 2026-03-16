@@ -28,12 +28,18 @@ namespace HijackPoker.Managers
             DOTween.Init(recycleAllByDefault: true, useSafeMode: true, logBehaviour: LogBehaviour.ErrorsOnly);
         }
 
+        public string PlayerName { get; private set; }
+
         private async void Start()
         {
+            PlayerName = PlayerPrefs.GetString("PlayerName", "Player");
+
             bool connected = await _apiClient.CheckConnectionAsync(maxRetries: 3);
 
             if (connected)
             {
+                // Always start fresh — advance to first step then load state
+                await _apiClient.ProcessStepAsync(_tableId);
                 var state = await _apiClient.GetTableStateAsync(_tableId);
                 if (state != null) _stateManager.SetState(state);
             }

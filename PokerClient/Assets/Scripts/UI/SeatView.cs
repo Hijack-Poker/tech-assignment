@@ -37,18 +37,36 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _handRankText;
         [SerializeField] private TextMeshProUGUI _winningsText;
 
+        [Header("Local Player")]
+        [SerializeField] private TextMeshProUGUI _youLabel;
+
         private static readonly Color NormalColor = new Color(0.04f, 0.09f, 0.14f, 0.9f);
+        private static readonly Color PlayerColor = new Color(0.06f, 0.18f, 0.28f, 0.95f);
+        private static readonly Color PlayerBorderColor = new Color(0.38f, 0.78f, 0.88f, 0.6f);
         private static readonly Color AllInColor = new Color(0.96f, 0.69f, 0.28f);
         private static readonly Color GoldColor = new Color(0.96f, 0.79f, 0.45f);
+
+        private bool _isLocalPlayer;
 
         private Tweener _winnerPulseTween;
         private float _displayedStack;
 
-        public void Render(PlayerState player, GameState game)
+        public void Render(PlayerState player, GameState game, string localPlayerName = null)
         {
             gameObject.SetActive(true);
 
+            // Check if this seat belongs to the local player (seat 1)
+            _isLocalPlayer = !string.IsNullOrEmpty(localPlayerName) && player.Seat == 1;
+
             _nameText.text = player.Username;
+
+            // Show player name above seat box for local player
+            if (_youLabel != null)
+            {
+                _youLabel.gameObject.SetActive(_isLocalPlayer);
+                if (_isLocalPlayer)
+                    _youLabel.text = localPlayerName;
+            }
             _betText.text = player.Bet > 0 ? MoneyFormatter.Format(player.Bet) : "";
             if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);
             if (_chipStackView != null) _chipStackView.Render(player.Stack);
@@ -67,7 +85,9 @@ namespace HijackPoker.UI
             _bbBadge.SetActive(player.Seat == game.BigBlindSeat);
 
             _canvasGroup.alpha = player.IsFolded ? 0.4f : 1f;
-            _borderImage.color = player.IsAllIn ? AllInColor : Color.clear;
+            _borderImage.color = player.IsAllIn ? AllInColor
+                : _isLocalPlayer ? PlayerBorderColor
+                : Color.clear;
 
             bool showCards = game.IsShowdown || player.IsWinner;
             if (player.HasCards && player.Cards.Count >= 2)
@@ -85,9 +105,10 @@ namespace HijackPoker.UI
             if (_winnerPulseTween != null) { _winnerPulseTween.Kill(); _winnerPulseTween = null; }
 
             bool isWinner = player.IsWinner;
+            var baseColor = _isLocalPlayer ? PlayerColor : NormalColor;
             if (isWinner)
             {
-                _backgroundImage.color = NormalColor;
+                _backgroundImage.color = baseColor;
                 _winnerPulseTween = DOTween.To(
                     () => _backgroundImage.color,
                     c => _backgroundImage.color = c,
@@ -102,7 +123,7 @@ namespace HijackPoker.UI
             }
             else
             {
-                _backgroundImage.color = NormalColor;
+                _backgroundImage.color = baseColor;
                 _winningsText.text = "";
             }
 

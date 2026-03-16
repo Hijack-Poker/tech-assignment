@@ -126,6 +126,11 @@ namespace HijackPoker.UI
             if (_transitioning) return;
             _transitioning = true;
 
+            // Store the player name for the game scene
+            string playerName = _nameInput.text.Trim();
+            PlayerPrefs.SetString("PlayerName", playerName);
+            PlayerPrefs.Save();
+
             _buttonPulse?.Kill();
             _cardFloat?.Kill();
 

@@ -491,6 +491,14 @@ public static class BuildHomeScene
             es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
         }
 
+        // Apply Delius font to ALL TMP text in the scene
+        var deliusFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Delius-Regular SDF.asset");
+        if (deliusFont != null)
+        {
+            foreach (var tmp in Object.FindObjectsOfType<TextMeshProUGUI>(true))
+                tmp.font = deliusFont;
+        }
+
         // Save scene
         EditorSceneManager.SaveScene(sc, "Assets/Scenes/HomeScene.unity");
 

@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using TMPro;
+using TMPro.EditorUtilities;
 using System.IO;
 
 public static class RebuildScene
@@ -39,6 +40,7 @@ public static class RebuildScene
     static readonly Color CHIP_STRIPE = H("FFFFFF", 0.3f);
 
     static Sprite _oval, _roundRect;
+    static TMP_FontAsset _deliusFont;
     static Sprite[] _chipSprites;
     static readonly string[] ChipNames = { "chipRedWhite", "chipGreenWhite", "chipBlueWhite", "chipBlackWhite" };
 
@@ -51,6 +53,56 @@ public static class RebuildScene
         _chipSprites = new Sprite[ChipNames.Length];
         for (int i = 0; i < ChipNames.Length; i++)
             _chipSprites[i] = AssetDatabase.LoadAssetAtPath<Sprite>($"Assets/Sprites/Chips/{ChipNames[i]}.png");
+        // Load or create Delius TMP font
+        _deliusFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Delius-Regular SDF.asset");
+        if (!_deliusFont)
+        {
+            var srcFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/Fonts/Delius-Regular.ttf");
+            if (srcFont != null)
+            {
+                // Create with explicit atlas size for stability
+                _deliusFont = TMP_FontAsset.CreateFontAsset(srcFont, 44, 5,
+                    UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA, 1024, 1024,
+                    AtlasPopulationMode.Dynamic);
+                _deliusFont.name = "Delius-Regular SDF";
+                // Add LiberationSans as fallback for card suit symbols etc.
+                var defaultFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                    "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset");
+                var fallbackFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                    "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF - Fallback.asset");
+                _deliusFont.fallbackFontAssetTable = new System.Collections.Generic.List<TMP_FontAsset>();
+                if (defaultFont != null) _deliusFont.fallbackFontAssetTable.Add(defaultFont);
+                if (fallbackFont != null) _deliusFont.fallbackFontAssetTable.Add(fallbackFont);
+                // Pre-populate common ASCII characters to avoid dynamic atlas issues in editor
+                _deliusFont.TryAddCharacters("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !@#$%^&*()-_=+[]{}|;:'\",.<>?/\\`~");
+                AssetDatabase.CreateAsset(_deliusFont, "Assets/Fonts/Delius-Regular SDF.asset");
+                // Save the atlas texture as sub-asset
+                if (_deliusFont.atlasTexture != null)
+                    AssetDatabase.AddObjectToAsset(_deliusFont.atlasTexture, _deliusFont);
+                if (_deliusFont.material != null)
+                    AssetDatabase.AddObjectToAsset(_deliusFont.material, _deliusFont);
+                AssetDatabase.SaveAssets();
+                Debug.Log("Created Delius SDF font asset with pre-populated atlas");
+            }
+            else
+            {
+                Debug.LogWarning("Delius-Regular.ttf not found, using default font");
+            }
+        }
+        // Set Delius as the TMP default font
+        if (_deliusFont != null)
+        {
+            var tmpSettings = Resources.Load<TMP_Settings>("TMP Settings");
+            if (tmpSettings != null)
+            {
+                var so = new SerializedObject(tmpSettings);
+                so.FindProperty("m_defaultFontAsset").objectReferenceValue = _deliusFont;
+                so.ApplyModifiedProperties();
+                EditorUtility.SetDirty(tmpSettings);
+                AssetDatabase.SaveAssets();
+            }
+        }
+
         var pfb = HistoryPrefab();
 
         var sc = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
@@ -120,17 +172,27 @@ public static class RebuildScene
         Rect(potGO, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, -40), new Vector2(300, 36));
 
         // ══════ 6 SEATS ══════
+        // Seat 1 (You) at bottom-right, others clockwise from top-left
         Vector2[] seatPos = {
-            TC + new Vector2(-450, 200),
-            TC + new Vector2(450, 200),
-            TC + new Vector2(529, -85),
-            TC + new Vector2(260, -310),
-            TC + new Vector2(-260, -310),
-            TC + new Vector2(-529, -85),
+            TC + new Vector2(260, -310),   // Seat 1 (You) — bottom-right
+            TC + new Vector2(-450, 200),   // Seat 2 — top-left
+            TC + new Vector2(450, 200),    // Seat 3 — top-right
+            TC + new Vector2(529, -85),    // Seat 4 — right
+            TC + new Vector2(-260, -310),  // Seat 5 — bottom-left
+            TC + new Vector2(-529, -85),   // Seat 6 — left
         };
         var seatViews = new HijackPoker.UI.SeatView[6];
         for (int i = 0; i < 6; i++)
             seatViews[i] = BuildSeat(i + 1, cv.transform, seatPos[i]);
+
+        // "You" label above Seat 1 (bottom-right)
+        var youLabel = UI("YouLabel", cv.transform);
+        var youLabelTMP = youLabel.AddComponent<TextMeshProUGUI>();
+        youLabelTMP.text = "You"; youLabelTMP.fontSize = 18; youLabelTMP.fontStyle = FontStyles.Bold;
+        youLabelTMP.alignment = TextAlignmentOptions.Center; youLabelTMP.color = H("6EC6FF");
+        youLabelTMP.enableAutoSizing = false;
+        Rect(youLabel, 0.5f, 0.5f, 0.5f, 0.5f, seatPos[0] + new Vector2(0, 92), new Vector2(195, 28));
+
         var tableView = felt.AddComponent<HijackPoker.UI.TableView>();
 
         // ══════ HUD ══════
@@ -285,7 +347,7 @@ public static class RebuildScene
 
         // ══════ WIRE ══════
         W(gm, "_apiClient", api); W(gm, "_stateManager", sm);
-        W(tableView, "_stateManager", sm); W(tableView, "_communityCardsView", ccComp);
+        W(tableView, "_stateManager", sm); W(tableView, "_gameManager", gm); W(tableView, "_communityCardsView", ccComp);
         WArr(tableView, "_seatViews", seatViews);
         W(hudView, "_stateManager", sm); W(hudView, "_phaseLabel", phT);
         W(hudView, "_handNumberText", hnT); W(hudView, "_actionText", acT); W(hudView, "_potText", pdT);
@@ -297,6 +359,8 @@ public static class RebuildScene
         WArr(ctrlView, "_speedButtons", sBtns); WArr(ctrlView, "_speedButtonImages", sImgs);
         W(histView, "_stateManager", sm); W(histView, "_content", cnt.transform);
         W(histView, "_scrollRect", sr); W(histView, "_entryPrefab", pfb);
+        // Wire youLabel to seat 1 (local player)
+        W(seatViews[0], "_youLabel", youLabelTMP);
 
         // EventSystem
         if (!Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>())
@@ -304,6 +368,13 @@ public static class RebuildScene
             var es = new GameObject("EventSystem");
             es.AddComponent<UnityEngine.EventSystems.EventSystem>();
             es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+        }
+
+        // Apply Delius font to ALL TMP text in the scene
+        if (_deliusFont != null)
+        {
+            foreach (var tmp in Object.FindObjectsOfType<TextMeshProUGUI>(true))
+                tmp.font = _deliusFont;
         }
 
         EditorSceneManager.SaveScene(sc, "Assets/Scenes/PokerTable.unity");
