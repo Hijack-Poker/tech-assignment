@@ -946,14 +946,7 @@ public static class RebuildScene
         wrapper.AddComponent<LayoutElement>().preferredWidth = w;
         wrapper.GetComponent<LayoutElement>().preferredHeight = h;
 
-        // Shadow
-        var shadow = UI("Shadow", wrapper.transform);
-        var shImg = shadow.AddComponent<Image>(); shImg.color = SHADOW;
-        var shRT = shadow.GetComponent<RectTransform>();
-        shRT.anchorMin = Vector2.zero; shRT.anchorMax = Vector2.one;
-        shRT.offsetMin = new Vector2(-2, -4); shRT.offsetMax = new Vector2(2, 0);
-
-        // Card
+        // Card (no shadow, no background)
         var card = UI(name, wrapper.transform);
         var img = card.AddComponent<Image>(); img.color = CE; img.preserveAspect = true;
         Stretch(card);
