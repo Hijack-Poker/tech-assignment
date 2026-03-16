@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 using DG.Tweening;
 using HijackPoker.Managers;
@@ -14,6 +15,7 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _handNumberText;
         [SerializeField] private TextMeshProUGUI _actionText;
         [SerializeField] private TextMeshProUGUI _potText;
+        [SerializeField] private Image _potChipImage;
 
         private float _displayedPot;
 
@@ -37,6 +39,8 @@ namespace HijackPoker.UI
                 _displayedPot = value;
                 _potText.text = $"Pot: {MoneyFormatter.Format(value)}";
             }).SetEase(Ease.OutCubic).SetTarget(_potText);
+
+            if (_potChipImage != null) _potChipImage.gameObject.SetActive(game.Pot > 0);
 
             if (game.Move > 0)
             {

@@ -30,12 +30,10 @@ namespace HijackPoker.Managers
 
         private async void Start()
         {
-            _stateManager.NotifyConnectionStatus("Connecting...");
             bool connected = await _apiClient.CheckConnectionAsync(maxRetries: 3);
 
             if (connected)
             {
-                _stateManager.NotifyConnectionStatus("Connected");
                 var state = await _apiClient.GetTableStateAsync(_tableId);
                 if (state != null) _stateManager.SetState(state);
             }

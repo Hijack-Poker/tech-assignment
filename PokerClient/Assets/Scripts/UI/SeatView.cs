@@ -29,6 +29,9 @@ namespace HijackPoker.UI
         [SerializeField] private Image _borderImage;
         [SerializeField] private CanvasGroup _canvasGroup;
 
+        [Header("Chips")]
+        [SerializeField] private Image _betChipImage;
+
         [Header("Winner")]
         [SerializeField] private TextMeshProUGUI _handRankText;
         [SerializeField] private TextMeshProUGUI _winningsText;
@@ -46,6 +49,7 @@ namespace HijackPoker.UI
 
             _nameText.text = player.Username;
             _betText.text = player.Bet > 0 ? MoneyFormatter.Format(player.Bet) : "";
+            if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);
             _actionText.text = player.Action?.ToUpper() ?? "";
 
             // Stack tween
