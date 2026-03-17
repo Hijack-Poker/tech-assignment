@@ -374,6 +374,26 @@ public static class RebuildScene
         Stretch(animLayer);
         // No Image — transparent pass-through, just a parent for flying chips/cards
 
+        // ══════ LOADING OVERLAY (hide table skeleton until first state) ══════
+        var loadingOverlay = UI("LoadingOverlay", cv.transform);
+        var loadingImg = loadingOverlay.AddComponent<Image>();
+        loadingImg.color = H("07121E", 0.96f);
+        Stretch(loadingOverlay);
+        var loadingCG = loadingOverlay.AddComponent<CanvasGroup>();
+        loadingCG.alpha = 1f;
+        loadingCG.interactable = true;
+        loadingCG.blocksRaycasts = true;
+
+        var loadingLabel = UI("LoadingLabel", loadingOverlay.transform);
+        var loadingTMP = loadingLabel.AddComponent<TextMeshProUGUI>();
+        loadingTMP.text = "Loading Table...";
+        loadingTMP.fontSize = 40;
+        loadingTMP.fontStyle = FontStyles.Bold;
+        loadingTMP.alignment = TextAlignmentOptions.Center;
+        loadingTMP.color = H("EAF5FF");
+        loadingTMP.characterSpacing = 2f;
+        Rect(loadingLabel, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, 0), new Vector2(680, 72));
+
         // ══════ GAME MANAGER ══════
         var gmGO = new GameObject("GameManager");
         var api = gmGO.AddComponent<HijackPoker.Api.PokerApiClient>();
@@ -386,6 +406,8 @@ public static class RebuildScene
         WArr(tableView, "_seatViews", seatViews);
         W(tableView, "_centerPotText", potTMP);
         W(tableView, "_potTarget", potTargetGO.GetComponent<RectTransform>());
+        W(tableView, "_loadingOverlayGroup", loadingCG);
+        W(tableView, "_loadingOverlayText", loadingTMP);
         W(tableView, "_dealerSource", dealerSrc.GetComponent<RectTransform>());
         W(tableView, "_animLayer", animLayer.GetComponent<RectTransform>());
         // Chip fly sprite — use the first chip sprite (red)

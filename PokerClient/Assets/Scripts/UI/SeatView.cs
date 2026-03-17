@@ -141,11 +141,25 @@ namespace HijackPoker.UI
         public Vector3 CardAreaWorldPosition =>
             _cardsGroup != null ? _cardsGroup.transform.position : transform.position;
 
+        public void SetPositionBadges(bool isDealer, bool isSmallBlind, bool isBigBlind)
+        {
+            if (_dealerBadge != null) _dealerBadge.SetActive(isDealer);
+            if (_sbBadge != null) _sbBadge.SetActive(isSmallBlind);
+            if (_bbBadge != null) _bbBadge.SetActive(isBigBlind);
+        }
+
         /// <summary>Show/hide the cards container (used during deal animation).</summary>
         public void SetCardsVisible(bool visible)
         {
             if (_cardsGroup != null)
+            {
                 _cardsGroup.alpha = visible ? 1f : 0f;
+            }
+            else
+            {
+                if (_card1 != null) _card1.gameObject.SetActive(visible);
+                if (_card2 != null) _card2.gameObject.SetActive(visible);
+            }
         }
 
         public void SetAvatar(Sprite sprite)
