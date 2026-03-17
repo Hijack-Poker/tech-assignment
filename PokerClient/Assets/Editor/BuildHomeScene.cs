@@ -155,7 +155,7 @@ public static class BuildHomeScene
 
         // ══════ GLASS PANEL ══════
         var panelRoot = UI("MainPanelRoot", cv.transform);
-        Rect(panelRoot, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, 20), new Vector2(840, 660));
+        Rect(panelRoot, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, 20), new Vector2(840, 740));
 
         var panelShadow = UI("PanelShadow", panelRoot.transform);
         var panelShadowImg = panelShadow.AddComponent<Image>();
@@ -393,13 +393,104 @@ public static class BuildHomeScene
         inputField.caretColor = CYAN;
         inputField.selectionColor = H("4BD5D1", 0.22f);
 
+        // ══════ AVATAR PICKER (compact row) ══════
+        var avatarRow = UI("AvatarRow", content.transform);
+        var avatarRowImg = avatarRow.AddComponent<Image>();
+        avatarRowImg.sprite = _roundRect;
+        avatarRowImg.type = Image.Type.Sliced;
+        avatarRowImg.color = H("0A1320", 0.6f);
+        Rect(avatarRow, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -192), new Vector2(470, 56));
+
+        // Label inside the row
+        var avatarLabel = UI("AvatarLabel", avatarRow.transform);
+        var avatarLabelTMP = avatarLabel.AddComponent<TextMeshProUGUI>();
+        avatarLabelTMP.text = "AVATAR";
+        avatarLabelTMP.fontSize = 9;
+        avatarLabelTMP.fontStyle = FontStyles.Bold;
+        avatarLabelTMP.alignment = TextAlignmentOptions.Center;
+        avatarLabelTMP.color = H("8DA4BC");
+        avatarLabelTMP.characterSpacing = 3;
+        var alRT = avatarLabel.GetComponent<RectTransform>();
+        alRT.anchorMin = new Vector2(0, 0); alRT.anchorMax = new Vector2(0, 1);
+        alRT.pivot = new Vector2(0, 0.5f);
+        alRT.anchoredPosition = new Vector2(8, 0);
+        alRT.sizeDelta = new Vector2(50, 0);
+
+        // Selected avatar preview (small circle, left side)
+        var previewGO = UI("AvatarPreview", avatarRow.transform);
+        var previewBg = previewGO.AddComponent<Image>();
+        previewBg.sprite = _oval;
+        previewBg.color = H("162C42");
+        previewGO.AddComponent<Mask>().showMaskGraphic = true;
+        var prevRT = previewGO.GetComponent<RectTransform>();
+        prevRT.anchorMin = new Vector2(0, 0.5f); prevRT.anchorMax = new Vector2(0, 0.5f);
+        prevRT.pivot = new Vector2(0, 0.5f);
+        prevRT.anchoredPosition = new Vector2(62, 0);
+        prevRT.sizeDelta = new Vector2(42, 42);
+
+        var previewImg = UI("PreviewImg", previewGO.transform);
+        var selectedPreview = previewImg.AddComponent<Image>();
+        selectedPreview.color = new Color(1, 1, 1, 0);
+        selectedPreview.preserveAspect = true;
+        Stretch(previewImg);
+
+        // Scrollable avatar list (right side, fills remaining space)
+        var avatarScroll = UI("AvatarScroll", avatarRow.transform);
+        var avatarScrollRT = avatarScroll.GetComponent<RectTransform>();
+        avatarScrollRT.anchorMin = new Vector2(0, 0); avatarScrollRT.anchorMax = new Vector2(1, 1);
+        avatarScrollRT.offsetMin = new Vector2(112, 4); avatarScrollRT.offsetMax = new Vector2(-4, -4);
+
+        var avatarSR = avatarScroll.AddComponent<ScrollRect>();
+        avatarSR.horizontal = true; avatarSR.vertical = false;
+        avatarSR.scrollSensitivity = 20;
+
+        var avatarVP = UI("VP", avatarScroll.transform);
+        avatarVP.AddComponent<Image>().color = Color.clear;
+        avatarVP.AddComponent<Mask>().showMaskGraphic = false;
+        Stretch(avatarVP);
+
+        var avatarContent = UI("Content", avatarVP.transform);
+        var avatarHLG = avatarContent.AddComponent<HorizontalLayoutGroup>();
+        avatarHLG.spacing = 4; avatarHLG.childAlignment = TextAnchor.MiddleLeft;
+        avatarHLG.padding = new RectOffset(2, 2, 2, 2);
+        avatarHLG.childForceExpandWidth = false; avatarHLG.childForceExpandHeight = false;
+        avatarContent.AddComponent<ContentSizeFitter>().horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        var avatarContentRT = avatarContent.GetComponent<RectTransform>();
+        avatarContentRT.anchorMin = new Vector2(0, 0); avatarContentRT.anchorMax = new Vector2(0, 1);
+        avatarContentRT.pivot = new Vector2(0, 0.5f);
+        avatarContentRT.sizeDelta = Vector2.zero;
+        avatarSR.viewport = avatarVP.GetComponent<RectTransform>();
+        avatarSR.content = avatarContentRT;
+
+        var avatarGridCG = avatarScroll.AddComponent<CanvasGroup>();
+
+        // Avatar button template (hidden, cloned at runtime)
+        var avatarBtnTemplate = UI("AvatarBtnTemplate", avatarContent.transform);
+        var abtImg = avatarBtnTemplate.AddComponent<Image>();
+        abtImg.sprite = _oval; abtImg.color = H("1A2E42");
+        avatarBtnTemplate.AddComponent<Mask>().showMaskGraphic = true;
+        avatarBtnTemplate.AddComponent<Button>();
+        var abtOutline = avatarBtnTemplate.AddComponent<Outline>();
+        abtOutline.effectColor = new Color(1, 1, 1, 0);
+        abtOutline.effectDistance = new Vector2(2f, -2f);
+        avatarBtnTemplate.AddComponent<LayoutElement>().preferredWidth = 42;
+        avatarBtnTemplate.GetComponent<LayoutElement>().preferredHeight = 42;
+
+        var abtIcon = UI("Icon", avatarBtnTemplate.transform);
+        var abtIconImg = abtIcon.AddComponent<Image>();
+        abtIconImg.color = new Color(1, 1, 1, 0);
+        abtIconImg.preserveAspect = true;
+        Stretch(abtIcon);
+
+        avatarBtnTemplate.SetActive(false);
+
         // ══════ PLAY BUTTON ══════
         var btnShadow = UI("PlayButtonShadow", content.transform);
         var btnShadowImg = btnShadow.AddComponent<Image>();
         btnShadowImg.sprite = _roundRect;
         btnShadowImg.type = Image.Type.Sliced;
         btnShadowImg.color = SHADOW;
-        Rect(btnShadow, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -228), new Vector2(342, 72));
+        Rect(btnShadow, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -258), new Vector2(342, 62));
 
         var btnGO = new GameObject("PlayButton", typeof(RectTransform));
         btnGO.transform.SetParent(content.transform, false);
@@ -409,7 +500,7 @@ public static class BuildHomeScene
         btnImg.color = G_BTN;
         var btn = btnGO.AddComponent<Button>();
         var btnCG = btnGO.AddComponent<CanvasGroup>();
-        Rect(btnGO, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -220), new Vector2(340, 70));
+        Rect(btnGO, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -250), new Vector2(340, 60));
         var btnOutline = btnGO.AddComponent<Outline>();
         btnOutline.effectColor = H("72E2B8", 0.35f);
         btnOutline.effectDistance = new Vector2(1f, -1f);
@@ -459,7 +550,7 @@ public static class BuildHomeScene
         verTMP.alignment = TextAlignmentOptions.Center;
         verTMP.color = TD;
         verTMP.characterSpacing = 0.5f;
-        Rect(verGO, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -306), new Vector2(520, 24));
+        Rect(verGO, 0.5f, 0.5f, 0.5f, 0.5f, new Vector2(0, -300), new Vector2(520, 24));
 
         // ══════ FADE OVERLAY ══════
         var fadeGO = UI("FadeOverlay", cv.transform);
@@ -481,6 +572,10 @@ public static class BuildHomeScene
         so.FindProperty("_nameInput").objectReferenceValue = inputField;
         so.FindProperty("_nameInputGroup").objectReferenceValue = nameInputCG;
         so.FindProperty("_fadeOverlay").objectReferenceValue = fadeImg;
+        so.FindProperty("_avatarGrid").objectReferenceValue = avatarContent.transform;
+        so.FindProperty("_avatarGridGroup").objectReferenceValue = avatarGridCG;
+        so.FindProperty("_selectedAvatarPreview").objectReferenceValue = selectedPreview;
+        so.FindProperty("_avatarBtnTemplate").objectReferenceValue = abtImg;
         so.ApplyModifiedProperties();
 
         // EventSystem

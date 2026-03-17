@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 using TMPro;
 using HijackPoker.Managers;
 
@@ -16,6 +17,7 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _autoPlayButtonText;
         [SerializeField] private Button[] _speedButtons;
         [SerializeField] private Image[] _speedButtonImages;
+        [SerializeField] private Button _exitButton;
 
         private static readonly Color SelectedSpeedColor = new Color(0.17f, 0.55f, 0.92f);
         private static readonly Color DefaultSpeedColor = new Color(0.13f, 0.20f, 0.28f);
@@ -28,6 +30,8 @@ namespace HijackPoker.UI
         {
             _nextStepButton.onClick.AddListener(OnNextStepClicked);
             _autoPlayButton.onClick.AddListener(OnAutoPlayClicked);
+            if (_exitButton != null)
+                _exitButton.onClick.AddListener(OnExitClicked);
 
             for (int i = 0; i < _speedButtons.Length; i++)
             {
@@ -63,6 +67,13 @@ namespace HijackPoker.UI
             _selectedSpeedIndex = index;
             _gameManager.SetAutoPlaySpeed(GameManager.SpeedOptions[index]);
             RefreshSpeedButtons();
+        }
+
+        private void OnExitClicked()
+        {
+            if (_gameManager.IsAutoPlaying)
+                _gameManager.ToggleAutoPlay();
+            SceneManager.LoadScene("HomeScene");
         }
 
         private void RefreshSpeedButtons()

@@ -28,6 +28,7 @@ namespace HijackPoker.UI
         [SerializeField] private Image _backgroundImage;
         [SerializeField] private Image _borderImage;
         [SerializeField] private Image _avatarRingImage;
+        [SerializeField] private Image _avatarImage;
         [SerializeField] private TextMeshProUGUI _avatarInitialText;
         [SerializeField] private CanvasGroup _canvasGroup;
 
@@ -62,13 +63,13 @@ namespace HijackPoker.UI
                 ? $"{localPlayerName} <size=10><color=#6EC6FF>(You)</color></size>"
                 : player.Username;
 
-            // Set avatar initial
+            // Set avatar initial as fallback
             if (_avatarInitialText != null)
             {
+                bool hasAvatar = _avatarImage != null && _avatarImage.sprite != null;
                 string displayName = _isLocalPlayer ? localPlayerName : player.Username;
-                _avatarInitialText.text = !string.IsNullOrEmpty(displayName)
-                    ? displayName[0].ToString().ToUpper()
-                    : "?";
+                _avatarInitialText.text = hasAvatar ? "" :
+                    (!string.IsNullOrEmpty(displayName) ? displayName[0].ToString().ToUpper() : "?");
             }
             _betText.text = player.Bet > 0 ? MoneyFormatter.Format(player.Bet) : "";
             if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);
@@ -131,6 +132,17 @@ namespace HijackPoker.UI
             }
 
             _handRankText.text = isWinner && !string.IsNullOrEmpty(player.HandRank) ? player.HandRank : "";
+        }
+
+        public void SetAvatar(Sprite sprite)
+        {
+            if (_avatarImage == null) return;
+            if (sprite != null)
+            {
+                _avatarImage.sprite = sprite;
+                _avatarImage.color = Color.white;
+                if (_avatarInitialText != null) _avatarInitialText.text = "";
+            }
         }
 
         public void Clear()

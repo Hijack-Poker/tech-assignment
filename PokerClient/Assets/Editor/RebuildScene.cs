@@ -41,6 +41,17 @@ public static class RebuildScene
 
     static Sprite _oval, _roundRect;
     static TMP_FontAsset _deliusFont;
+
+    // Avatar sprites per seat (loaded from SIMPLE Avatars Icons)
+    static readonly string[] AvatarNames = {
+        "Ninja",      // Seat 1 (You)
+        "Wizard",     // Seat 2
+        "Samurai",    // Seat 3
+        "Warrior_1",  // Seat 4
+        "Dwarf_1",    // Seat 5
+        "Elf_1",      // Seat 6
+    };
+    static Sprite[] _avatarSprites;
     static Sprite[] _chipSprites;
     static readonly string[] ChipNames = { "chipRedWhite", "chipGreenWhite", "chipBlueWhite", "chipBlackWhite" };
 
@@ -101,6 +112,16 @@ public static class RebuildScene
                 EditorUtility.SetDirty(tmpSettings);
                 AssetDatabase.SaveAssets();
             }
+        }
+
+        // Load avatar sprites
+        _avatarSprites = new Sprite[AvatarNames.Length];
+        for (int i = 0; i < AvatarNames.Length; i++)
+        {
+            _avatarSprites[i] = AssetDatabase.LoadAssetAtPath<Sprite>(
+                $"Assets/SIMPLE Avatars Icons/512X512/{AvatarNames[i]}.png");
+            if (!_avatarSprites[i])
+                Debug.LogWarning($"Avatar sprite not found: {AvatarNames[i]}");
         }
 
         var pfb = HistoryPrefab();
@@ -287,6 +308,16 @@ public static class RebuildScene
             var b = SpeedPill($"Speed_{spd[i]}", spd[i], sg.transform, 58, 60);
             sBtns[i] = b.GetComponent<Button>(); sImgs[i] = b.GetComponent<Image>();
         }
+        // ── Separator 2 ──
+        var sep2 = UI("Separator2", ctrl.transform);
+        var sep2Img = sep2.AddComponent<Image>(); sep2Img.color = H("FFFFFF", 0.08f);
+        sep2.AddComponent<LayoutElement>().preferredWidth = 1;
+        sep2.GetComponent<LayoutElement>().preferredHeight = 30;
+
+        // ── Exit button (red-ish to stand out) ──
+        var eb = FancyBtn("ExitButton", "EXIT", ctrl.transform, 120, 70,
+            H("8B2C2C"), H("C04545"), H("6B1E1E"));
+
         var ctrlView = ctrl.AddComponent<HijackPoker.UI.ControlsView>();
 
         // ══════ HISTORY ══════
@@ -349,6 +380,7 @@ public static class RebuildScene
         W(ctrlView, "_autoPlayButton", ab.GetComponent<Button>());
         W(ctrlView, "_autoPlayButtonText", abTxt);
         WArr(ctrlView, "_speedButtons", sBtns); WArr(ctrlView, "_speedButtonImages", sImgs);
+        W(ctrlView, "_exitButton", eb.GetComponent<Button>());
         W(histView, "_stateManager", sm); W(histView, "_content", cnt.transform);
         W(histView, "_scrollRect", sr); W(histView, "_entryPrefab", pfb);
         // EventSystem
@@ -749,23 +781,26 @@ public static class RebuildScene
         var bgImg = avatarBg.AddComponent<Image>();
         bgImg.sprite = _oval;
         bgImg.color = SEAT_BG;
+        // Mask to clip avatar to circle
+        avatarBg.AddComponent<Mask>().showMaskGraphic = true;
         var bgRT = avatarBg.GetComponent<RectTransform>();
         bgRT.anchorMin = bgRT.anchorMax = new Vector2(0.5f, 0.5f);
         bgRT.sizeDelta = new Vector2(124, 124);
 
-        // Avatar initial letter (placeholder until real avatars)
-        var avatarInitial = UI("AvatarInitial", avatarBg.transform);
-        var aiT = avatarInitial.AddComponent<TextMeshProUGUI>();
-        aiT.text = "?"; aiT.fontSize = 48; aiT.fontStyle = FontStyles.Bold;
-        aiT.alignment = TextAlignmentOptions.Center; aiT.color = AvatarColors[(n - 1) % AvatarColors.Length];
-        Stretch(avatarInitial);
-
-        // Avatar image slot (for future avatar sprites)
+        // Avatar image (assigned at runtime by TableView)
         var avatarImg = UI("AvatarImage", avatarBg.transform);
         var avImg = avatarImg.AddComponent<Image>();
-        avImg.color = new Color(1, 1, 1, 0); // invisible until set
+        avImg.color = new Color(1, 1, 1, 0); // transparent until runtime
         avImg.preserveAspect = true;
         Stretch(avatarImg);
+
+        // Avatar initial letter (fallback)
+        var avatarInitial = UI("AvatarInitial", avatarBg.transform);
+        var aiT = avatarInitial.AddComponent<TextMeshProUGUI>();
+        aiT.text = "?";
+        aiT.fontSize = 48; aiT.fontStyle = FontStyles.Bold;
+        aiT.alignment = TextAlignmentOptions.Center; aiT.color = AvatarColors[(n - 1) % AvatarColors.Length];
+        Stretch(avatarInitial);
 
         // Name — positioned ABOVE the avatar
         var nm = UI("Name", root.transform);
@@ -883,6 +918,7 @@ public static class RebuildScene
         so.FindProperty("_backgroundImage").objectReferenceValue = bgImg;
         so.FindProperty("_borderImage").objectReferenceValue = brdImg;
         so.FindProperty("_avatarRingImage").objectReferenceValue = ringImg;
+        so.FindProperty("_avatarImage").objectReferenceValue = avImg;
         so.FindProperty("_avatarInitialText").objectReferenceValue = aiT;
         so.FindProperty("_canvasGroup").objectReferenceValue = cg;
         so.FindProperty("_betChipImage").objectReferenceValue = betChipImg;

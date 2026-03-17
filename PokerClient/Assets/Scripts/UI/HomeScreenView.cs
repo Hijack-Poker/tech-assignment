@@ -19,6 +19,12 @@ namespace HijackPoker.UI
         [SerializeField] private CanvasGroup _nameInputGroup;
         [SerializeField] private Image _fadeOverlay;
 
+        [Header("Avatar Selection")]
+        [SerializeField] private Transform _avatarGrid;
+        [SerializeField] private CanvasGroup _avatarGridGroup;
+        [SerializeField] private Image _selectedAvatarPreview;
+        [SerializeField] private Image _avatarBtnTemplate;
+
         private static readonly Color DisabledBtn = new Color(0.20f, 0.25f, 0.32f);
         private static readonly Color EnabledBtn = new Color(0.09f, 0.64f, 0.43f);
 
@@ -27,6 +33,7 @@ namespace HijackPoker.UI
         private Tween _buttonColorTween;
         private Tween _cardFloat;
         private bool _transitioning;
+        private string _selectedAvatar = "";
 
         private void Start()
         {
@@ -85,6 +92,63 @@ namespace HijackPoker.UI
 
             _nameInput.onValueChanged.AddListener(OnNameChanged);
             _playButton.onClick.AddListener(OnPlayClicked);
+
+            // Populate avatar grid
+            PopulateAvatarGrid();
+        }
+
+        private void PopulateAvatarGrid()
+        {
+            if (_avatarGrid == null || _avatarBtnTemplate == null) return;
+            _avatarBtnTemplate.gameObject.SetActive(false);
+
+            var avatars = Resources.LoadAll<Sprite>("Avatars");
+            foreach (var sprite in avatars)
+            {
+                var go = Instantiate(_avatarBtnTemplate.gameObject, _avatarGrid);
+                go.SetActive(true);
+                var img = go.GetComponent<Image>();
+                // Find the child avatar image
+                var avatarImg = go.transform.Find("Icon")?.GetComponent<Image>();
+                if (avatarImg != null)
+                {
+                    avatarImg.sprite = sprite;
+                    avatarImg.color = Color.white;
+                }
+                var btn = go.GetComponent<Button>();
+                if (btn == null) btn = go.AddComponent<Button>();
+                string spriteName = sprite.name;
+                btn.onClick.AddListener(() => SelectAvatar(spriteName, sprite));
+            }
+
+            // Pre-select first avatar
+            if (avatars.Length > 0)
+                SelectAvatar(avatars[0].name, avatars[0]);
+        }
+
+        private void SelectAvatar(string name, Sprite sprite)
+        {
+            _selectedAvatar = name;
+            if (_selectedAvatarPreview != null)
+            {
+                _selectedAvatarPreview.sprite = sprite;
+                _selectedAvatarPreview.color = Color.white;
+            }
+            // Highlight selected in grid
+            if (_avatarGrid != null)
+            {
+                foreach (Transform child in _avatarGrid)
+                {
+                    if (!child.gameObject.activeSelf) continue;
+                    var outline = child.GetComponent<Outline>();
+                    var iconImg = child.Find("Icon")?.GetComponent<Image>();
+                    bool isSelected = iconImg != null && iconImg.sprite != null && iconImg.sprite.name == name;
+                    if (outline != null)
+                        outline.effectColor = isSelected
+                            ? new Color(0.39f, 0.87f, 0.86f, 1f)
+                            : new Color(1, 1, 1, 0);
+                }
+            }
         }
 
         private void OnNameChanged(string value)
@@ -126,9 +190,10 @@ namespace HijackPoker.UI
             if (_transitioning) return;
             _transitioning = true;
 
-            // Store the player name for the game scene
+            // Store the player name and avatar for the game scene
             string playerName = _nameInput.text.Trim();
             PlayerPrefs.SetString("PlayerName", playerName);
+            PlayerPrefs.SetString("PlayerAvatar", _selectedAvatar);
             PlayerPrefs.Save();
 
             _buttonPulse?.Kill();
