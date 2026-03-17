@@ -162,7 +162,7 @@ namespace HijackPoker.UI
                         _seatViews[idx].SetCardsVisible(false);
                 }
             }
-            else if (!shouldDealCards)
+            else if (!shouldDealCards && _hasPlayedDealThisHand)
             {
                 foreach (var player in state.Players)
                 {
