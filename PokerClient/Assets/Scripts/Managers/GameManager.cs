@@ -133,7 +133,7 @@ namespace HijackPoker.Managers
                 yield return new WaitForSeconds(_autoPlaySpeed);
                 if (!_isProcessing)
                 {
-                    _ = AdvanceStepAsync(null, 0f);
+                    _ = AdvanceStepAsync();
                 }
             }
         }

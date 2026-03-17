@@ -62,6 +62,7 @@ namespace HijackPoker.UI
         private const float TurnDurationSeconds = 20f;
         private const float LowTimeWarningSeconds = 5f;
         private bool _hasPlayedLowTimeWarning;
+        private AudioSource _timeWarningAudioSource;
         private int _badgeGameNo = -1;
         private int _badgeDealerSeat = -1;
         private int _badgeSmallBlindSeat = -1;
@@ -687,6 +688,7 @@ namespace HijackPoker.UI
                 _turnTimerRoutine = null;
             }
             ClearTurnTimers();
+            StopTimeRemainingSound();
             _turnTimerSeat = -1;
             _turnTimerStep = -1;
             _turnTimerGameNo = -1;
@@ -842,7 +844,20 @@ namespace HijackPoker.UI
             if (_timeRemainingSound == null) return;
             EnsureAudioRefs();
             if (_sfxAudioSource == null) return;
-            _sfxAudioSource.PlayOneShot(_timeRemainingSound);
+
+            if (_timeWarningAudioSource == null)
+            {
+                _timeWarningAudioSource = gameObject.AddComponent<AudioSource>();
+                _timeWarningAudioSource.playOnAwake = false;
+            }
+            _timeWarningAudioSource.clip = _timeRemainingSound;
+            _timeWarningAudioSource.Play();
+        }
+
+        private void StopTimeRemainingSound()
+        {
+            if (_timeWarningAudioSource != null && _timeWarningAudioSource.isPlaying)
+                _timeWarningAudioSource.Stop();
         }
 
         private void PlayDealShuffleSound()
