@@ -42,6 +42,10 @@ namespace HijackPoker.UI
         private float _displayedPot;
         private bool _isFirstState = true;
         private bool _hasPlayedDealThisHand;
+        private int _badgeGameNo = -1;
+        private int _badgeDealerSeat = -1;
+        private int _badgeSmallBlindSeat = -1;
+        private int _badgeBigBlindSeat = -1;
 
         // Card back sprite for deal animation
         private Sprite _cardBackSprite;
@@ -98,6 +102,8 @@ namespace HijackPoker.UI
             int step = state.Game.HandStep;
             bool newHand = state.Game.GameNo != _prevGameNo;
 
+            ResolveBlindSeatsForHand(state, out int dealerSeat, out int sbSeat, out int bbSeat, newHand);
+
             // Reset tracking on new hand
             if (newHand)
             {
@@ -107,16 +113,29 @@ namespace HijackPoker.UI
             }
 
             // ── 1. CHIP FLY ANIMATION (bet increases) ──
-            if (!_isFirstState)
+            bool shouldAnimateChipFly = !_isFirstState;
+            if (shouldAnimateChipFly)
             {
                 foreach (var player in state.Players)
                 {
                     _prevBets.TryGetValue(player.Seat, out float prevBet);
-                    if (player.Bet > prevBet && player.Bet > 0)
+                    bool betIncreased = player.Bet > prevBet && player.Bet > 0;
+                    if (!betIncreased) continue;
+
+                    // Blind-post transitions:
+                    // 2 -> 3 means SB was just posted, 3 -> 4 means BB was just posted.
+                    bool isBlindTransition = _prevHandStep == 2 || _prevHandStep == 3;
+                    if (isBlindTransition)
                     {
-                        int idx = player.Seat - 1;
-                        if (idx >= 0 && idx < _seatViews.Length)
-                            AnimateChipFly(_seatViews[idx]);
+                        bool isExpectedBlindPayer = (_prevHandStep == 2 && player.Seat == sbSeat) ||
+                                                    (_prevHandStep == 3 && player.Seat == bbSeat);
+                        if (!isExpectedBlindPayer) continue;
+                    }
+
+                    int idx = player.Seat - 1;
+                    if (idx >= 0 && idx < _seatViews.Length)
+                    {
+                        AnimateChipFly(_seatViews[idx]);
                     }
                 }
             }
@@ -128,8 +147,6 @@ namespace HijackPoker.UI
             // Trigger exactly once per hand once cards exist and we are at/after deal step.
             bool hasDealablePlayers = state.Players.Any(p => p.HasCards && p.Seat > 0);
             bool shouldDealCards = !_hasPlayedDealThisHand && step >= 4 && hasDealablePlayers;
-
-            ResolveBlindSeats(state, out int dealerSeat, out int sbSeat, out int bbSeat);
 
             // ── 4. NORMAL REDRAW ──
             foreach (var seat in _seatViews)
@@ -195,14 +212,8 @@ namespace HijackPoker.UI
             _isFirstState = false;
         }
 
-        private void ResolveBlindSeats(TableResponse state, out int dealerSeat, out int sbSeat, out int bbSeat)
+        private void ResolveBlindSeatsForHand(TableResponse state, out int dealerSeat, out int sbSeat, out int bbSeat, bool newHand)
         {
-            dealerSeat = state.Game.DealerSeat;
-            sbSeat = state.Game.SmallBlindSeat;
-            bbSeat = state.Game.BigBlindSeat;
-
-            if (dealerSeat > 0 && sbSeat > 0 && bbSeat > 0) return;
-
             var occupied = state.Players
                 .Select(p => p.Seat)
                 .Where(s => s > 0)
@@ -210,20 +221,75 @@ namespace HijackPoker.UI
                 .OrderBy(s => s)
                 .ToList();
 
-            if (occupied.Count == 0) return;
-            if (dealerSeat <= 0) dealerSeat = occupied[0];
-            if (sbSeat <= 0) sbSeat = GetNextOccupiedSeat(occupied, dealerSeat);
-            if (bbSeat <= 0) bbSeat = GetNextOccupiedSeat(occupied, sbSeat);
+            // Keep badges stable inside one hand to avoid visible switching
+            // while backend states are still warming up in first steps.
+            if (!newHand && _badgeGameNo == state.Game.GameNo &&
+                _badgeDealerSeat > 0 && _badgeSmallBlindSeat > 0 && _badgeBigBlindSeat > 0)
+            {
+                dealerSeat = _badgeDealerSeat;
+                sbSeat = _badgeSmallBlindSeat;
+                bbSeat = _badgeBigBlindSeat;
+                return;
+            }
+
+            int apiDealerSeat = state.Game.DealerSeat;
+            int apiSmallBlindSeat = state.Game.SmallBlindSeat;
+            int apiBigBlindSeat = state.Game.BigBlindSeat;
+
+            dealerSeat = 0;
+            sbSeat = 0;
+            bbSeat = 0;
+
+            var clockwiseOccupied = GetClockwiseSeatOrder(occupied);
+
+            if (clockwiseOccupied.Count == 0)
+            {
+                dealerSeat = apiDealerSeat > 0 ? apiDealerSeat : 1;
+                sbSeat = dealerSeat;
+                bbSeat = dealerSeat;
+            }
+            else
+            {
+                // Prefer backend-provided dealer/blind seats when valid.
+                if (clockwiseOccupied.Contains(apiDealerSeat))
+                    dealerSeat = apiDealerSeat;
+
+                if (clockwiseOccupied.Contains(apiSmallBlindSeat) && clockwiseOccupied.Contains(apiBigBlindSeat))
+                {
+                    sbSeat = apiSmallBlindSeat;
+                    bbSeat = apiBigBlindSeat;
+                }
+
+                // If dealer is not provided yet, rotate clockwise from previous hand's dealer.
+                if (dealerSeat <= 0)
+                {
+                    if (_badgeDealerSeat > 0)
+                        dealerSeat = GetNextClockwiseSeat(clockwiseOccupied, _badgeDealerSeat);
+                    else
+                        dealerSeat = clockwiseOccupied[0];
+                }
+
+                // If SB/BB are missing from backend, derive from dealer clockwise.
+                if (sbSeat <= 0 || bbSeat <= 0)
+                {
+                    sbSeat = GetNextClockwiseSeat(clockwiseOccupied, dealerSeat);
+                    bbSeat = GetNextClockwiseSeat(clockwiseOccupied, sbSeat);
+                }
+            }
+
+            _badgeGameNo = state.Game.GameNo;
+            _badgeDealerSeat = dealerSeat;
+            _badgeSmallBlindSeat = sbSeat;
+            _badgeBigBlindSeat = bbSeat;
         }
 
-        private static int GetNextOccupiedSeat(List<int> occupied, int fromSeat)
+        private static int GetNextClockwiseSeat(List<int> clockwiseSeats, int fromSeat)
         {
-            for (int i = 0; i < occupied.Count; i++)
-            {
-                if (occupied[i] > fromSeat)
-                    return occupied[i];
-            }
-            return occupied[0];
+            if (clockwiseSeats == null || clockwiseSeats.Count == 0) return fromSeat;
+
+            int idx = clockwiseSeats.IndexOf(fromSeat);
+            if (idx < 0) return clockwiseSeats[0];
+            return clockwiseSeats[(idx + 1) % clockwiseSeats.Count];
         }
 
         // ══════ CHIP FLY ANIMATION ══════
@@ -259,7 +325,7 @@ namespace HijackPoker.UI
             if (_animLayer == null || _cardBackSprite == null || activePlayers == null || activePlayers.Count == 0)
                 yield break;
 
-            activePlayers = BuildDealOrder(activePlayers, dealerSeat);
+            activePlayers = BuildDealOrderClockwise(activePlayers, dealerSeat);
 
             // Hide real cards on all seats being dealt to
             foreach (var player in activePlayers)
@@ -333,27 +399,56 @@ namespace HijackPoker.UI
             }
         }
 
-        private static List<PlayerState> BuildDealOrder(List<PlayerState> players, int dealerSeat)
+        private List<PlayerState> BuildDealOrderClockwise(List<PlayerState> players, int dealerSeat)
         {
             if (players == null || players.Count == 0)
                 return new List<PlayerState>();
 
-            var sorted = players
+            var validPlayers = players
                 .Where(p => p.Seat > 0)
-                .OrderBy(p => p.Seat)
                 .ToList();
 
-            if (sorted.Count <= 1 || dealerSeat <= 0)
-                return sorted;
+            if (validPlayers.Count <= 1 || dealerSeat <= 0)
+                return validPlayers;
 
-            int startIdx = sorted.FindIndex(p => p.Seat > dealerSeat);
+            var clockwiseSeats = GetClockwiseSeatOrder(validPlayers.Select(p => p.Seat));
+            if (clockwiseSeats.Count == 0)
+                return validPlayers;
+
+            int startIdx = clockwiseSeats.IndexOf(dealerSeat);
             if (startIdx < 0) startIdx = 0;
+            startIdx = (startIdx + 1) % clockwiseSeats.Count; // first card starts left of dealer
 
-            var ordered = new List<PlayerState>(sorted.Count);
-            for (int i = 0; i < sorted.Count; i++)
-                ordered.Add(sorted[(startIdx + i) % sorted.Count]);
+            var bySeat = validPlayers.ToDictionary(p => p.Seat, p => p);
+            var ordered = new List<PlayerState>(clockwiseSeats.Count);
+            for (int i = 0; i < clockwiseSeats.Count; i++)
+            {
+                int seat = clockwiseSeats[(startIdx + i) % clockwiseSeats.Count];
+                if (bySeat.TryGetValue(seat, out var player))
+                    ordered.Add(player);
+            }
 
             return ordered;
+        }
+
+        private List<int> GetClockwiseSeatOrder(IEnumerable<int> seats)
+        {
+            if (seats == null) return new List<int>();
+
+            Vector3 center = _potTarget != null ? _potTarget.position : transform.position;
+
+            return seats
+                .Distinct()
+                .Where(seat => seat > 0 && seat - 1 < _seatViews.Length && _seatViews[seat - 1] != null)
+                .Select(seat =>
+                {
+                    Vector3 p = _seatViews[seat - 1].transform.position - center;
+                    float angle = Mathf.Atan2(p.y, p.x); // radians
+                    return new { seat, angle };
+                })
+                .OrderByDescending(x => x.angle) // descending angle = clockwise traversal in screen space
+                .Select(x => x.seat)
+                .ToList();
         }
 
         private static Tween CreateArcMoveTween(RectTransform card, Vector3 start, Vector3 end, float duration)

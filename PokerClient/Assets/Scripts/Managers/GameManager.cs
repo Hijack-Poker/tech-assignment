@@ -38,18 +38,23 @@ namespace HijackPoker.Managers
 
             if (connected)
             {
-                // Advance until we reach the start of a fresh hand (step 0 or 1)
-                // so the player sees SB/BB chip fly and card dealing animations
+                // Advance until we reach blind posting for a fresh hand (step 2),
+                // so startup skips the two setup-only phases.
+                HijackPoker.Models.TableResponse lastState = null;
                 for (int i = 0; i < 30; i++)
                 {
                     await _apiClient.ProcessStepAsync(_tableId);
                     var check = await _apiClient.GetTableStateAsync(_tableId);
-                    if (check != null && check.Game.HandStep <= 1)
+                    if (check != null) lastState = check;
+                    if (check != null && check.Game.HandStep == 2)
                     {
                         _stateManager.SetState(check);
                         break;
                     }
                 }
+
+                if (_stateManager.CurrentState == null && lastState != null)
+                    _stateManager.SetState(lastState);
             }
             else
             {

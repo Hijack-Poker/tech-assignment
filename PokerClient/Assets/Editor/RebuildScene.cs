@@ -58,6 +58,16 @@ public static class RebuildScene
     [MenuItem("Tools/Rebuild Scene")]
     public static void Build()
     {
+        if (EditorApplication.isPlayingOrWillChangePlaymode || Application.isPlaying)
+        {
+            Debug.LogError("Rebuild Scene can only run in Edit Mode. Stop Play Mode and run Tools > Rebuild Scene again.");
+            EditorUtility.DisplayDialog(
+                "Rebuild Scene",
+                "This tool only works in Edit Mode.\n\nStop Play Mode, then run Tools > Rebuild Scene again.",
+                "OK");
+            return;
+        }
+
         _oval = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/OvalFelt.png");
         if (!_oval) { Debug.LogError("OvalFelt.png missing!"); return; }
         _roundRect = GenerateRoundedRect("RoundRect", 128, 128, 20);

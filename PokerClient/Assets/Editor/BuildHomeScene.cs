@@ -26,6 +26,16 @@ public static class BuildHomeScene
     [MenuItem("Tools/Build Home Scene")]
     public static void Build()
     {
+        if (EditorApplication.isPlayingOrWillChangePlaymode || Application.isPlaying)
+        {
+            Debug.LogError("Build Home Scene can only run in Edit Mode. Stop Play Mode and run Tools > Build Home Scene again.");
+            EditorUtility.DisplayDialog(
+                "Build Home Scene",
+                "This tool only works in Edit Mode.\n\nStop Play Mode, then run Tools > Build Home Scene again.",
+                "OK");
+            return;
+        }
+
         _oval = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/OvalFelt.png");
         _roundRect = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/RoundRect.png");
         if (!_roundRect)

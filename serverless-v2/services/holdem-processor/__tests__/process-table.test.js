@@ -312,6 +312,15 @@ describe('Process Table — Hand State Machine', () => {
     it('should process a complete hand from prep to completion', () => {
       const game = createTestGame();
       const players = createTestPlayers(3);
+      const runRoundUntilAdvanced = (state, round, expectedRoundStep) => {
+        let guard = 0;
+        while (state.game.handStep === expectedRoundStep && guard < 10) {
+          state = bettingRound(state.game, state.players, round);
+          guard += 1;
+        }
+        expect(guard).toBeLessThan(10);
+        return state;
+      };
 
       // Step through the entire hand
       let state = gamePrep(game, players);
@@ -330,25 +339,25 @@ describe('Process Table — Hand State Machine', () => {
       expect(state.game.handStep).toBe(GAME_HAND.PRE_FLOP_BETTING_ROUND);
       state.players.forEach((p) => expect(p.cards).toHaveLength(2));
 
-      state = bettingRound(state.game, state.players, 'preflop');
+      state = runRoundUntilAdvanced(state, 'preflop', GAME_HAND.PRE_FLOP_BETTING_ROUND);
       expect(state.game.handStep).toBe(GAME_HAND.DEAL_FLOP);
 
       state = dealFlop(state.game, state.players);
       expect(state.game.communityCards).toHaveLength(3);
 
-      state = bettingRound(state.game, state.players, 'flop');
+      state = runRoundUntilAdvanced(state, 'flop', GAME_HAND.FLOP_BETTING_ROUND);
       expect(state.game.handStep).toBe(GAME_HAND.DEAL_TURN);
 
       state = dealTurn(state.game, state.players);
       expect(state.game.communityCards).toHaveLength(4);
 
-      state = bettingRound(state.game, state.players, 'turn');
+      state = runRoundUntilAdvanced(state, 'turn', GAME_HAND.TURN_BETTING_ROUND);
       expect(state.game.handStep).toBe(GAME_HAND.DEAL_RIVER);
 
       state = dealRiver(state.game, state.players);
       expect(state.game.communityCards).toHaveLength(5);
 
-      state = bettingRound(state.game, state.players, 'river');
+      state = runRoundUntilAdvanced(state, 'river', GAME_HAND.RIVER_BETTING_ROUND);
       expect(state.game.handStep).toBe(GAME_HAND.AFTER_RIVER_BETTING_ROUND);
 
       // After river -> find winners

@@ -223,10 +223,6 @@ function dealCards(game, players) {
  * Candidates will extend this for their challenge option.
  */
 function bettingRound(game, players, round) {
-  const activePlayers = players.filter(
-    (p) => p.status === PLAYER_STATUS.ACTIVE
-  );
-
   // Check if only one player remains (everyone else folded)
   const inHand = getPlayersInHand(players);
   if (inHand.length <= 1) {
@@ -242,29 +238,54 @@ function bettingRound(game, players, round) {
     return { game, players };
   }
 
-  // Simulate: all active players check or call the current bet
-  for (const player of activePlayers) {
-    if (player.bet < game.currentBet) {
-      // Call
-      const callAmount = Math.min(game.currentBet - player.bet, player.stack);
-      player.stack = toMoney(player.stack - callAmount);
-      player.bet = toMoney(player.bet + callAmount);
-      player.totalBet = toMoney(player.totalBet + callAmount);
-      player.action = ACTION.CALL;
-      if (player.stack === 0) {
-        player.status = PLAYER_STATUS.ALL_IN;
-        player.action = ACTION.ALLIN;
-      }
-    } else {
-      player.action = ACTION.CHECK;
-    }
+  // Process one acting player per /process call (turn-by-turn), instead of
+  // charging all players in one frame.
+  const roundStartSeat = round === 'preflop' ? game.bigBlindSeat : game.dealerSeat;
+  let actingSeat = game.move || getNextSeat(players, roundStartSeat, game.maxSeats);
+  let actingPlayer = players.find(
+    (p) => p.seat === actingSeat && p.status === PLAYER_STATUS.ACTIVE
+  );
+
+  if (!actingPlayer) {
+    actingSeat = getNextSeat(players, roundStartSeat, game.maxSeats);
+    actingPlayer = players.find(
+      (p) => p.seat === actingSeat && p.status === PLAYER_STATUS.ACTIVE
+    );
   }
 
-  // Collect bets into pot
-  const collected = collectBets(game, players);
-  game = collected.game;
+  if (!actingPlayer) {
+    // No active actor found: collect and move forward.
+    const collected = collectBets(game, players);
+    game = collected.game;
+    advanceToNextStreet(game, round);
+    return { game, players };
+  }
 
-  advanceToNextStreet(game, round);
+  if (actingPlayer.bet < game.currentBet) {
+    // Default simulation: call when facing a bet.
+    const callAmount = Math.min(game.currentBet - actingPlayer.bet, actingPlayer.stack);
+    actingPlayer.stack = toMoney(actingPlayer.stack - callAmount);
+    actingPlayer.bet = toMoney(actingPlayer.bet + callAmount);
+    actingPlayer.totalBet = toMoney(actingPlayer.totalBet + callAmount);
+    actingPlayer.action = ACTION.CALL;
+    if (actingPlayer.stack === 0) {
+      actingPlayer.status = PLAYER_STATUS.ALL_IN;
+      actingPlayer.action = ACTION.ALLIN;
+    }
+  } else {
+    // Default simulation: check when no call is required.
+    actingPlayer.action = ACTION.CHECK;
+  }
+
+  game.move = getNextSeat(players, actingSeat, game.maxSeats);
+
+  if (isBettingRoundComplete(players, game.currentBet)) {
+    const collected = collectBets(game, players);
+    game = collected.game;
+    game.move = 0;
+    advanceToNextStreet(game, round);
+  }
+
   return { game, players };
 }
 
