@@ -1,11 +1,13 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using DG.Tweening;
 using HijackPoker.Utils;
+using System;
 
 namespace HijackPoker.UI
 {
-    public class CardView : MonoBehaviour
+    public class CardView : MonoBehaviour, IPointerClickHandler
     {
         [SerializeField] private Image _cardImage;
         [SerializeField] private Color _foldDimTint = new Color(0.72f, 0.74f, 0.78f, 1f);
@@ -28,6 +30,14 @@ namespace HijackPoker.UI
         {
             { "H", "Hearts" }, { "D", "Diamonds" }, { "C", "Clubs" }, { "S", "Spades" }
         };
+
+        public event Action<CardView> Clicked;
+
+        private void Awake()
+        {
+            if (_cardImage != null)
+                _cardImage.raycastTarget = true;
+        }
 
         private static void EnsureSpritesLoaded()
         {
@@ -165,6 +175,11 @@ namespace HijackPoker.UI
         private void OnDestroy()
         {
             DOTween.Kill(transform);
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            Clicked?.Invoke(this);
         }
     }
 }

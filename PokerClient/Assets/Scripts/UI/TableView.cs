@@ -9,7 +9,6 @@ using System.Reflection;
 using TMPro;
 using DG.Tweening;
 using UnityEngine.Networking;
-using UnityEngine.UI;
 using HijackPoker.Managers;
 using HijackPoker.Models;
 using HijackPoker.Utils;
