@@ -36,6 +36,9 @@ namespace HijackPoker.UI
         [SerializeField] private Image _betChipImage;
         [SerializeField] private ChipStackView _chipStackView;
 
+        [Header("Cards Container")]
+        [SerializeField] private CanvasGroup _cardsGroup;
+
         [Header("Winner")]
         [SerializeField] private TextMeshProUGUI _handRankText;
         [SerializeField] private TextMeshProUGUI _winningsText;
@@ -132,6 +135,17 @@ namespace HijackPoker.UI
             }
 
             _handRankText.text = isWinner && !string.IsNullOrEmpty(player.HandRank) ? player.HandRank : "";
+        }
+
+        /// <summary>World position of the cards area (for deal animation targeting).</summary>
+        public Vector3 CardAreaWorldPosition =>
+            _cardsGroup != null ? _cardsGroup.transform.position : transform.position;
+
+        /// <summary>Show/hide the cards container (used during deal animation).</summary>
+        public void SetCardsVisible(bool visible)
+        {
+            if (_cardsGroup != null)
+                _cardsGroup.alpha = visible ? 1f : 0f;
         }
 
         public void SetAvatar(Sprite sprite)

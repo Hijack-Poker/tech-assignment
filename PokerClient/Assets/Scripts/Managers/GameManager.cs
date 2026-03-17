@@ -38,10 +38,18 @@ namespace HijackPoker.Managers
 
             if (connected)
             {
-                // Always start fresh — advance to first step then load state
-                await _apiClient.ProcessStepAsync(_tableId);
-                var state = await _apiClient.GetTableStateAsync(_tableId);
-                if (state != null) _stateManager.SetState(state);
+                // Advance until we reach the start of a fresh hand (step 0 or 1)
+                // so the player sees SB/BB chip fly and card dealing animations
+                for (int i = 0; i < 30; i++)
+                {
+                    await _apiClient.ProcessStepAsync(_tableId);
+                    var check = await _apiClient.GetTableStateAsync(_tableId);
+                    if (check != null && check.Game.HandStep <= 1)
+                    {
+                        _stateManager.SetState(check);
+                        break;
+                    }
+                }
             }
             else
             {

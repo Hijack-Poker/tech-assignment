@@ -150,6 +150,9 @@ public static class RebuildScene
 
         // ══════ DEALER ══════
         BuildDealer(cv.transform, TC + new Vector2(0, 418));
+        // Dealer source anchor (for card deal animation — at dealer's hands level)
+        var dealerSrc = UI("DealerSource", cv.transform);
+        Rect(dealerSrc, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, 340), new Vector2(10, 10));
 
         // ══════ COMMUNITY CARDS ══════
         var ccArea = UI("CommunityCardsArea", cv.transform);
@@ -184,13 +187,17 @@ public static class RebuildScene
         Rect(potChip3, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(-72, -55), new Vector2(36, 36));
         potChip3.transform.SetParent(potChipGO.transform, true);
 
-        // Pot text
-        var potGO = UI("PotText", cv.transform);
+        // Pot text — centered above community cards
+        var potGO = UI("CenterPotText", cv.transform);
         var potTMP = potGO.AddComponent<TextMeshProUGUI>();
-        potTMP.fontSize = 24; potTMP.fontStyle = FontStyles.Bold;
+        potTMP.fontSize = 22; potTMP.fontStyle = FontStyles.Bold;
         potTMP.alignment = TextAlignmentOptions.Center; potTMP.color = GOLD;
         potTMP.enableAutoSizing = false;
-        Rect(potGO, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, -40), new Vector2(300, 36));
+        Rect(potGO, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, 90), new Vector2(300, 36));
+
+        // Pot target (invisible anchor for chip fly destination)
+        var potTargetGO = UI("PotTarget", cv.transform);
+        Rect(potTargetGO, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, 50), new Vector2(10, 10));
 
         // ══════ 6 SEATS ══════
         // Seat 1 (You) at bottom-right, others clockwise from top-left
@@ -362,6 +369,11 @@ public static class RebuildScene
         sr.viewport = vp.GetComponent<RectTransform>(); sr.content = cntRT;
         var histView = hist.AddComponent<HijackPoker.UI.HandHistoryView>();
 
+        // ══════ ANIMATION LAYER (on top of everything) ══════
+        var animLayer = UI("AnimationLayer", cv.transform);
+        Stretch(animLayer);
+        // No Image — transparent pass-through, just a parent for flying chips/cards
+
         // ══════ GAME MANAGER ══════
         var gmGO = new GameObject("GameManager");
         var api = gmGO.AddComponent<HijackPoker.Api.PokerApiClient>();
@@ -372,6 +384,14 @@ public static class RebuildScene
         W(gm, "_apiClient", api); W(gm, "_stateManager", sm);
         W(tableView, "_stateManager", sm); W(tableView, "_gameManager", gm); W(tableView, "_communityCardsView", ccComp);
         WArr(tableView, "_seatViews", seatViews);
+        W(tableView, "_centerPotText", potTMP);
+        W(tableView, "_potTarget", potTargetGO.GetComponent<RectTransform>());
+        W(tableView, "_dealerSource", dealerSrc.GetComponent<RectTransform>());
+        W(tableView, "_animLayer", animLayer.GetComponent<RectTransform>());
+        // Chip fly sprite — use the first chip sprite (red)
+        var tvSO = new SerializedObject(tableView);
+        tvSO.FindProperty("_chipFlySprite").objectReferenceValue = _chipSprites[0];
+        tvSO.ApplyModifiedProperties();
         W(hudView, "_stateManager", sm); W(hudView, "_phaseLabel", phT);
         W(hudView, "_handNumberText", hnT); W(hudView, "_actionText", acT); W(hudView, "_potText", pdT);
         W(hudView, "_potChipImage", potChipImg);
@@ -824,6 +844,7 @@ public static class RebuildScene
 
         // Cards — positioned OUTSIDE to the LEFT of the avatar
         var ca = UI("Cards", root.transform);
+        var caCG = ca.AddComponent<CanvasGroup>(); // for deal animation show/hide
         var caRT = ca.GetComponent<RectTransform>();
         caRT.anchorMin = new Vector2(0, 0.5f); caRT.anchorMax = new Vector2(0, 0.5f);
         caRT.pivot = new Vector2(1, 0.5f);
@@ -923,6 +944,7 @@ public static class RebuildScene
         so.FindProperty("_canvasGroup").objectReferenceValue = cg;
         so.FindProperty("_betChipImage").objectReferenceValue = betChipImg;
         so.FindProperty("_chipStackView").objectReferenceValue = chipStackView;
+        so.FindProperty("_cardsGroup").objectReferenceValue = caCG;
         so.FindProperty("_handRankText").objectReferenceValue = rkT;
         so.FindProperty("_winningsText").objectReferenceValue = wnT;
         so.ApplyModifiedProperties();
