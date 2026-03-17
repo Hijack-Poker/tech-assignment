@@ -38,6 +38,7 @@ namespace HijackPoker.UI
 
         [Header("Cards Container")]
         [SerializeField] private CanvasGroup _cardsGroup;
+        [SerializeField] private Image _turnTimerRing;
 
         [Header("Winner")]
         [SerializeField] private TextMeshProUGUI _handRankText;
@@ -49,6 +50,8 @@ namespace HijackPoker.UI
         private static readonly Color PlayerBorderColor = new Color(0.38f, 0.78f, 0.88f, 0.6f);
         private static readonly Color AllInColor = new Color(0.96f, 0.69f, 0.28f);
         private static readonly Color GoldColor = new Color(0.96f, 0.79f, 0.45f);
+        private static readonly Color ActionDefaultColor = Color.white;
+        private static readonly Color ActionPromptColor = new Color(0.98f, 0.84f, 0.38f);
 
         private bool _isLocalPlayer;
 
@@ -60,7 +63,9 @@ namespace HijackPoker.UI
             gameObject.SetActive(true);
 
             // Check if this seat belongs to the local player (seat 1)
-            _isLocalPlayer = !string.IsNullOrEmpty(localPlayerName) && player.Seat == 1;
+            bool nameMatch = !string.IsNullOrEmpty(localPlayerName) &&
+                             string.Equals(player.Username, localPlayerName, System.StringComparison.OrdinalIgnoreCase);
+            _isLocalPlayer = nameMatch || player.Seat == 1;
 
             _nameText.text = _isLocalPlayer
                 ? $"{localPlayerName} <size=10><color=#6EC6FF>(You)</color></size>"
@@ -78,6 +83,7 @@ namespace HijackPoker.UI
             if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);
             if (_chipStackView != null) _chipStackView.Render(player.Stack);
             _actionText.text = player.Action?.ToUpper() ?? "";
+            _actionText.color = ActionDefaultColor;
 
             // Stack tween
             DOTween.Kill(_stackText);
@@ -162,6 +168,31 @@ namespace HijackPoker.UI
             }
         }
 
+        public void SetTurnTimer(bool active, float normalizedRemaining)
+        {
+            EnsureTurnTimerRing();
+            if (_turnTimerRing == null) return;
+
+            _turnTimerRing.gameObject.SetActive(active);
+            if (!active) return;
+
+            _turnTimerRing.fillAmount = Mathf.Clamp01(normalizedRemaining);
+        }
+
+        public void SetActionPrompt(bool showPrompt)
+        {
+            if (_actionText == null) return;
+            if (showPrompt)
+            {
+                _actionText.text = "FOLD | CALL | RAISE";
+                _actionText.color = ActionPromptColor;
+            }
+            else
+            {
+                _actionText.color = ActionDefaultColor;
+            }
+        }
+
         public void SetAvatar(Sprite sprite)
         {
             if (_avatarImage == null) return;
@@ -180,6 +211,7 @@ namespace HijackPoker.UI
             _displayedStack = 0f;
             DOTween.Kill(_stackText);
             if (_chipStackView != null) _chipStackView.Clear();
+            SetTurnTimer(false, 0f);
             gameObject.SetActive(false);
         }
 
@@ -187,6 +219,37 @@ namespace HijackPoker.UI
         {
             DOTween.Kill(_stackText);
             if (_winnerPulseTween != null) _winnerPulseTween.Kill();
+        }
+
+        private void EnsureTurnTimerRing()
+        {
+            if (_turnTimerRing != null || _avatarRingImage == null) return;
+
+            var go = new GameObject("TurnTimerRing", typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(_avatarRingImage.transform.parent, false);
+            go.transform.SetAsLastSibling();
+
+            var rt = go.GetComponent<RectTransform>();
+            var ringRt = _avatarRingImage.rectTransform;
+            rt.anchorMin = ringRt.anchorMin;
+            rt.anchorMax = ringRt.anchorMax;
+            rt.pivot = ringRt.pivot;
+            rt.anchoredPosition = ringRt.anchoredPosition;
+            rt.sizeDelta = ringRt.sizeDelta + new Vector2(14f, 14f);
+            rt.localScale = Vector3.one;
+
+            var img = go.GetComponent<Image>();
+            img.sprite = _avatarRingImage.sprite;
+            img.type = Image.Type.Filled;
+            img.fillMethod = Image.FillMethod.Radial360;
+            img.fillOrigin = (int)Image.Origin360.Top;
+            img.fillClockwise = false;
+            img.fillAmount = 1f;
+            img.color = new Color(0.96f, 0.81f, 0.33f, 0.92f);
+            img.raycastTarget = false;
+
+            _turnTimerRing = img;
+            _turnTimerRing.gameObject.SetActive(false);
         }
     }
 }

@@ -40,9 +40,9 @@ namespace HijackPoker.Api
         /// Advance the hand by one state machine step.
         /// POST /process { "tableId": tableId } → ProcessResponse
         /// </summary>
-        public async Task<ProcessResponse> ProcessStepAsync(int tableId)
+        public async Task<ProcessResponse> ProcessStepAsync(int tableId, string action = null, float amount = 0f, int seat = 0)
         {
-            var body = new { tableId = tableId };
+            var body = new { tableId = tableId, action = action, amount = amount, seat = seat };
             return await SendPostRequest<ProcessResponse>("/process", body);
         }
 

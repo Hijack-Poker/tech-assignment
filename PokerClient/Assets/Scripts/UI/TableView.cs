@@ -1,13 +1,18 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
+using System.Reflection;
 using TMPro;
 using DG.Tweening;
+using UnityEngine.Networking;
 using HijackPoker.Managers;
 using HijackPoker.Models;
 using HijackPoker.Utils;
+using uVegas.Demo;
 
 namespace HijackPoker.UI
 {
@@ -31,6 +36,10 @@ namespace HijackPoker.UI
         [SerializeField] private RectTransform _animLayer;
         [SerializeField] private Sprite _chipFlySprite;
 
+        [Header("Audio")]
+        [SerializeField] private AudioSource _sfxAudioSource;
+        [SerializeField] private AudioClip _turnStartSound;
+
         private Sprite[] _allAvatars;
         private Dictionary<int, Sprite> _seatAvatars;
         private bool _avatarsAssigned;
@@ -42,10 +51,16 @@ namespace HijackPoker.UI
         private float _displayedPot;
         private bool _isFirstState = true;
         private bool _hasPlayedDealThisHand;
+        private Coroutine _turnTimerRoutine;
+        private int _turnTimerSeat = -1;
+        private int _turnTimerStep = -1;
+        private int _turnTimerGameNo = -1;
+        private const float TurnDurationSeconds = 20f;
         private int _badgeGameNo = -1;
         private int _badgeDealerSeat = -1;
         private int _badgeSmallBlindSeat = -1;
         private int _badgeBigBlindSeat = -1;
+        private int _localSeat = 1;
 
         // Card back sprite for deal animation
         private Sprite _cardBackSprite;
@@ -61,13 +76,15 @@ namespace HijackPoker.UI
                 _cardBackSprite = allCards.FirstOrDefault(s => s.name.StartsWith("cardBack"));
             }
             EnsureAnimationRefs();
+            EnsureAudioRefs();
+            TryResolveTurnStartSound();
             SetLoadingVisible(true, immediate: true);
         }
 
         private void OnEnable() => _stateManager.OnTableStateChanged += OnStateChanged;
         private void OnDisable() => _stateManager.OnTableStateChanged -= OnStateChanged;
 
-        private void AssignAvatars(List<PlayerState> players)
+        private void AssignAvatars(List<PlayerState> players, string localPlayerName)
         {
             if (_avatarsAssigned || _allAvatars == null || _allAvatars.Length == 0) return;
             _avatarsAssigned = true;
@@ -80,15 +97,19 @@ namespace HijackPoker.UI
             var pool = _allAvatars.Where(s => s != playerSprite).ToList();
             for (int i = pool.Count - 1; i > 0; i--)
             {
-                int j = Random.Range(0, i + 1);
+                int j = UnityEngine.Random.Range(0, i + 1);
                 (pool[i], pool[j]) = (pool[j], pool[i]);
             }
 
             int poolIdx = 0;
             foreach (var player in players)
             {
-                if (player.Seat == 1 && playerSprite != null)
-                    _seatAvatars[1] = playerSprite;
+                bool isLocal = !string.IsNullOrEmpty(localPlayerName) &&
+                               !string.IsNullOrEmpty(player.Username) &&
+                               player.Username.Equals(localPlayerName, System.StringComparison.OrdinalIgnoreCase);
+                if (!isLocal && player.Seat == 1) isLocal = true;
+                if (isLocal && playerSprite != null)
+                    _seatAvatars[player.Seat] = playerSprite;
                 else if (poolIdx < pool.Count)
                     _seatAvatars[player.Seat] = pool[poolIdx++];
             }
@@ -97,7 +118,8 @@ namespace HijackPoker.UI
         private void OnStateChanged(TableResponse state)
         {
             string localName = _gameManager != null ? _gameManager.PlayerName : null;
-            AssignAvatars(state.Players);
+            _localSeat = ResolveLocalSeat(state.Players, localName);
+            AssignAvatars(state.Players, localName);
 
             int step = state.Game.HandStep;
             bool newHand = state.Game.GameNo != _prevGameNo;
@@ -132,7 +154,7 @@ namespace HijackPoker.UI
                         if (!isExpectedBlindPayer) continue;
                     }
 
-                    int idx = player.Seat - 1;
+                    int idx = SeatToViewIndex(player.Seat);
                     if (idx >= 0 && idx < _seatViews.Length)
                     {
                         AnimateChipFly(_seatViews[idx]);
@@ -154,12 +176,13 @@ namespace HijackPoker.UI
 
             foreach (var player in state.Players)
             {
-                int idx = player.Seat - 1;
+                int idx = SeatToViewIndex(player.Seat);
                 if (idx >= 0 && idx < _seatViews.Length)
                 {
                     if (_seatAvatars.TryGetValue(player.Seat, out var avatar))
                         _seatViews[idx].SetAvatar(avatar);
                     _seatViews[idx].Render(player, state.Game, localName);
+                    _seatViews[idx].SetActionPrompt(IsBettingStep(step) && state.Game.Move == player.Seat);
                     _seatViews[idx].SetPositionBadges(
                         player.Seat == dealerSeat,
                         player.Seat == sbSeat,
@@ -174,7 +197,7 @@ namespace HijackPoker.UI
             {
                 foreach (var player in state.Players)
                 {
-                    int idx = player.Seat - 1;
+                    int idx = SeatToViewIndex(player.Seat);
                     if (idx >= 0 && idx < _seatViews.Length)
                         _seatViews[idx].SetCardsVisible(false);
                 }
@@ -183,7 +206,7 @@ namespace HijackPoker.UI
             {
                 foreach (var player in state.Players)
                 {
-                    int idx = player.Seat - 1;
+                    int idx = SeatToViewIndex(player.Seat);
                     if (idx >= 0 && idx < _seatViews.Length)
                         _seatViews[idx].SetCardsVisible(true);
                 }
@@ -193,7 +216,11 @@ namespace HijackPoker.UI
             if (shouldDealCards)
             {
                 var activePlayers = state.Players
-                    .Where(p => p.HasCards && p.Seat - 1 >= 0 && p.Seat - 1 < _seatViews.Length)
+                    .Where(p =>
+                    {
+                        int idx = SeatToViewIndex(p.Seat);
+                        return p.HasCards && idx >= 0 && idx < _seatViews.Length;
+                    })
                     .ToList();
                 StartCoroutine(AnimateCardDeal(activePlayers, dealerSeat));
                 _hasPlayedDealThisHand = true;
@@ -209,6 +236,7 @@ namespace HijackPoker.UI
             if (_isFirstState)
                 SetLoadingVisible(false, immediate: false);
 
+            UpdateTurnTimer(state);
             _isFirstState = false;
         }
 
@@ -330,7 +358,8 @@ namespace HijackPoker.UI
             // Hide real cards on all seats being dealt to
             foreach (var player in activePlayers)
             {
-                int idx = player.Seat - 1;
+                int idx = SeatToViewIndex(player.Seat);
+                if (idx < 0 || idx >= _seatViews.Length) continue;
                 _seatViews[idx].SetCardsVisible(false);
             }
 
@@ -344,7 +373,8 @@ namespace HijackPoker.UI
             {
                 foreach (var player in activePlayers)
                 {
-                    int idx = player.Seat - 1;
+                    int idx = SeatToViewIndex(player.Seat);
+                    if (idx < 0 || idx >= _seatViews.Length) continue;
                     var seat = _seatViews[idx];
 
                     var cardGO = new GameObject($"DealCard_{player.Seat}_{round}", typeof(RectTransform));
@@ -394,7 +424,8 @@ namespace HijackPoker.UI
 
             foreach (var player in activePlayers)
             {
-                int idx = player.Seat - 1;
+                int idx = SeatToViewIndex(player.Seat);
+                if (idx < 0 || idx >= _seatViews.Length) continue;
                 _seatViews[idx].SetCardsVisible(true);
             }
         }
@@ -439,10 +470,15 @@ namespace HijackPoker.UI
 
             return seats
                 .Distinct()
-                .Where(seat => seat > 0 && seat - 1 < _seatViews.Length && _seatViews[seat - 1] != null)
+                .Where(seat =>
+                {
+                    int idx = SeatToViewIndex(seat);
+                    return seat > 0 && idx >= 0 && idx < _seatViews.Length && _seatViews[idx] != null;
+                })
                 .Select(seat =>
                 {
-                    Vector3 p = _seatViews[seat - 1].transform.position - center;
+                    int idx = SeatToViewIndex(seat);
+                    Vector3 p = _seatViews[idx].transform.position - center;
                     float angle = Mathf.Atan2(p.y, p.x); // radians
                     return new { seat, angle };
                 })
@@ -485,6 +521,7 @@ namespace HijackPoker.UI
 
         private void OnDestroy()
         {
+            StopTurnTimer();
             if (_centerPotText != null) DOTween.Kill(_centerPotText);
             if (_loadingOverlayGroup != null) DOTween.Kill(_loadingOverlayGroup);
         }
@@ -544,6 +581,173 @@ namespace HijackPoker.UI
                 visible ? 1f : 0f,
                 0.28f
             ).SetEase(Ease.OutQuad);
+        }
+
+        private void UpdateTurnTimer(TableResponse state)
+        {
+            if (state == null || state.Game == null) return;
+
+            bool isBettingStep = IsBettingStep(state.Game.HandStep);
+            int moveSeat = state.Game.Move;
+
+            if (!isBettingStep || moveSeat <= 0)
+            {
+                StopTurnTimer();
+                return;
+            }
+
+            bool changed = _turnTimerRoutine == null ||
+                           _turnTimerSeat != moveSeat ||
+                           _turnTimerStep != state.Game.HandStep ||
+                           _turnTimerGameNo != state.Game.GameNo;
+            if (!changed) return;
+
+            StopTurnTimer();
+            _turnTimerSeat = moveSeat;
+            _turnTimerStep = state.Game.HandStep;
+            _turnTimerGameNo = state.Game.GameNo;
+            PlayTurnStartSound();
+            _turnTimerRoutine = StartCoroutine(TurnTimerCoroutine(_turnTimerSeat, _turnTimerStep, _turnTimerGameNo));
+        }
+
+        private IEnumerator TurnTimerCoroutine(int seat, int step, int gameNo)
+        {
+            float remaining = TurnDurationSeconds;
+            while (remaining > 0f)
+            {
+                float normalized = remaining / TurnDurationSeconds;
+                ShowTurnTimerOnSeat(seat, normalized);
+                remaining -= Time.deltaTime;
+                yield return null;
+            }
+
+            ShowTurnTimerOnSeat(seat, 0f);
+
+            var current = _stateManager != null ? _stateManager.CurrentState : null;
+            bool stillSameTurn = current != null &&
+                                 current.Game != null &&
+                                 current.Game.GameNo == gameNo &&
+                                 current.Game.HandStep == step &&
+                                 current.Game.Move == seat &&
+                                 IsBettingStep(current.Game.HandStep);
+            if (stillSameTurn && _gameManager != null)
+            {
+                _ = _gameManager.AdvanceStepAsync("fold", 0f);
+            }
+        }
+
+        private void StopTurnTimer()
+        {
+            if (_turnTimerRoutine != null)
+            {
+                StopCoroutine(_turnTimerRoutine);
+                _turnTimerRoutine = null;
+            }
+            ClearTurnTimers();
+            _turnTimerSeat = -1;
+            _turnTimerStep = -1;
+            _turnTimerGameNo = -1;
+        }
+
+        private void ShowTurnTimerOnSeat(int seat, float normalized)
+        {
+            for (int i = 0; i < _seatViews.Length; i++)
+            {
+                if (_seatViews[i] == null) continue;
+                bool active = i == SeatToViewIndex(seat);
+                _seatViews[i].SetTurnTimer(active, normalized);
+            }
+        }
+
+        private void ClearTurnTimers()
+        {
+            for (int i = 0; i < _seatViews.Length; i++)
+            {
+                if (_seatViews[i] == null) continue;
+                _seatViews[i].SetTurnTimer(false, 0f);
+            }
+        }
+
+        private static bool IsBettingStep(int step)
+        {
+            return step == 5 || step == 7 || step == 9 || step == 11;
+        }
+
+        private void EnsureAudioRefs()
+        {
+            if (_sfxAudioSource == null)
+                _sfxAudioSource = GetComponent<AudioSource>();
+            if (_sfxAudioSource == null)
+                _sfxAudioSource = gameObject.AddComponent<AudioSource>();
+        }
+
+        private void TryResolveTurnStartSound()
+        {
+            if (_turnStartSound != null) return;
+
+            var cardThemeManager = FindObjectOfType<CardThemeManager>();
+            if (cardThemeManager != null)
+            {
+                var clipField = typeof(CardThemeManager).GetField("winSound", BindingFlags.Instance | BindingFlags.NonPublic);
+                var sourceField = typeof(CardThemeManager).GetField("sfxAudioSource", BindingFlags.Instance | BindingFlags.NonPublic);
+
+                _turnStartSound = clipField?.GetValue(cardThemeManager) as AudioClip;
+                if (_sfxAudioSource == null)
+                    _sfxAudioSource = sourceField?.GetValue(cardThemeManager) as AudioSource;
+            }
+
+            if (_turnStartSound == null)
+                StartCoroutine(LoadTurnStartSoundFromProjectPath());
+        }
+
+        private IEnumerator LoadTurnStartSoundFromProjectPath()
+        {
+            string clipPath = Path.Combine(Application.dataPath, "uVegas/Audio/UI/win_01.wav");
+            if (!File.Exists(clipPath))
+                yield break;
+
+            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+                _turnStartSound = DownloadHandlerAudioClip.GetContent(request);
+        }
+
+        private void PlayTurnStartSound()
+        {
+            if (_turnStartSound == null) return;
+            EnsureAudioRefs();
+            if (_sfxAudioSource == null) return;
+            _sfxAudioSource.PlayOneShot(_turnStartSound);
+        }
+
+        private int SeatToViewIndex(int seat)
+        {
+            if (seat <= 0 || _seatViews == null || _seatViews.Length == 0) return -1;
+            // Keep local player anchored at bottom-right (view index 0),
+            // then place others clockwise around the table.
+            if (_seatViews.Length == 6)
+            {
+                int rel = ((seat - _localSeat) % 6 + 6) % 6; // clockwise distance from local seat
+                int[] relativeToView = { 0, 4, 5, 1, 2, 3 };
+                int idx = relativeToView[rel];
+                if (idx >= 0 && idx < _seatViews.Length) return idx;
+            }
+            int fallback = seat - 1;
+            return fallback >= 0 && fallback < _seatViews.Length ? fallback : -1;
+        }
+
+        private static int ResolveLocalSeat(List<PlayerState> players, string localName)
+        {
+            if (players == null || players.Count == 0) return 1;
+            if (!string.IsNullOrEmpty(localName))
+            {
+                var local = players.FirstOrDefault(p =>
+                    !string.IsNullOrEmpty(p.Username) &&
+                    p.Username.Equals(localName, StringComparison.OrdinalIgnoreCase));
+                if (local != null && local.Seat > 0) return local.Seat;
+            }
+            return 1;
         }
     }
 }

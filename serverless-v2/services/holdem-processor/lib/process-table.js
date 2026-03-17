@@ -21,7 +21,7 @@ const { logger } = require('../shared/config/logger');
  * This is the core of the game engine — candidates implementing Bomb Pots
  * will add a new hand variant that modifies this flow.
  */
-async function processTable(tableId) {
+async function processTable(tableId, actionRequest = null) {
   const table = await fetchTable(tableId);
   if (!table) {
     logger.warn(`Table ${tableId} not found`);
@@ -48,25 +48,25 @@ async function processTable(tableId) {
       result = dealCards(game, players);
       break;
     case GAME_HAND.PRE_FLOP_BETTING_ROUND:
-      result = bettingRound(game, players, 'preflop');
+      result = bettingRound(game, players, 'preflop', actionRequest);
       break;
     case GAME_HAND.DEAL_FLOP:
       result = dealFlop(game, players);
       break;
     case GAME_HAND.FLOP_BETTING_ROUND:
-      result = bettingRound(game, players, 'flop');
+      result = bettingRound(game, players, 'flop', actionRequest);
       break;
     case GAME_HAND.DEAL_TURN:
       result = dealTurn(game, players);
       break;
     case GAME_HAND.TURN_BETTING_ROUND:
-      result = bettingRound(game, players, 'turn');
+      result = bettingRound(game, players, 'turn', actionRequest);
       break;
     case GAME_HAND.DEAL_RIVER:
       result = dealRiver(game, players);
       break;
     case GAME_HAND.RIVER_BETTING_ROUND:
-      result = bettingRound(game, players, 'river');
+      result = bettingRound(game, players, 'river', actionRequest);
       break;
     case GAME_HAND.AFTER_RIVER_BETTING_ROUND:
       result = afterRiverBettingRound(game, players);
@@ -222,7 +222,7 @@ function dealCards(game, players) {
  * to simplify. The real engine waits for player actions via WebSocket.
  * Candidates will extend this for their challenge option.
  */
-function bettingRound(game, players, round) {
+function bettingRound(game, players, round, actionRequest = null) {
   // Check if only one player remains (everyone else folded)
   const inHand = getPlayersInHand(players);
   if (inHand.length <= 1) {
@@ -261,21 +261,8 @@ function bettingRound(game, players, round) {
     return { game, players };
   }
 
-  if (actingPlayer.bet < game.currentBet) {
-    // Default simulation: call when facing a bet.
-    const callAmount = Math.min(game.currentBet - actingPlayer.bet, actingPlayer.stack);
-    actingPlayer.stack = toMoney(actingPlayer.stack - callAmount);
-    actingPlayer.bet = toMoney(actingPlayer.bet + callAmount);
-    actingPlayer.totalBet = toMoney(actingPlayer.totalBet + callAmount);
-    actingPlayer.action = ACTION.CALL;
-    if (actingPlayer.stack === 0) {
-      actingPlayer.status = PLAYER_STATUS.ALL_IN;
-      actingPlayer.action = ACTION.ALLIN;
-    }
-  } else {
-    // Default simulation: check when no call is required.
-    actingPlayer.action = ACTION.CHECK;
-  }
+  const requestedAction = normalizeRequestedAction(actionRequest, actingSeat);
+  applyTurnAction(game, actingPlayer, requestedAction);
 
   game.move = getNextSeat(players, actingSeat, game.maxSeats);
 
@@ -287,6 +274,79 @@ function bettingRound(game, players, round) {
   }
 
   return { game, players };
+}
+
+function normalizeRequestedAction(actionRequest, actingSeat) {
+  if (!actionRequest || !actionRequest.action) return null;
+  if (actionRequest.seat && actionRequest.seat !== actingSeat) return null;
+  return {
+    action: String(actionRequest.action).toLowerCase(),
+    amount: Number(actionRequest.amount || 0),
+  };
+}
+
+function applyTurnAction(game, player, requestedAction) {
+  // If no action is submitted (timeout), fold automatically.
+  if (!requestedAction) {
+    player.status = PLAYER_STATUS.FOLDED;
+    player.action = ACTION.FOLD;
+    return;
+  }
+
+  const toCall = Math.max(0, toMoney(game.currentBet - player.bet));
+  const chosen = requestedAction.action;
+
+  if (chosen === ACTION.FOLD) {
+    player.status = PLAYER_STATUS.FOLDED;
+    player.action = ACTION.FOLD;
+    return;
+  }
+
+  if (chosen === ACTION.CALL) {
+    if (toCall <= 0) {
+      player.action = ACTION.CHECK;
+      return;
+    }
+    const callAmount = Math.min(toCall, player.stack);
+    player.stack = toMoney(player.stack - callAmount);
+    player.bet = toMoney(player.bet + callAmount);
+    player.totalBet = toMoney(player.totalBet + callAmount);
+    player.action = ACTION.CALL;
+    if (player.stack === 0) {
+      player.status = PLAYER_STATUS.ALL_IN;
+      player.action = ACTION.ALLIN;
+    }
+    return;
+  }
+
+  if (chosen === ACTION.RAISE) {
+    // Raise amount is the amount added this action (not total bet target).
+    const minRaiseAdd = toCall + game.bigBlind;
+    const desiredAdd = requestedAction.amount > 0 ? requestedAction.amount : minRaiseAdd;
+    const raiseAdd = Math.min(Math.max(desiredAdd, minRaiseAdd), player.stack);
+
+    player.stack = toMoney(player.stack - raiseAdd);
+    player.bet = toMoney(player.bet + raiseAdd);
+    player.totalBet = toMoney(player.totalBet + raiseAdd);
+    player.action = ACTION.RAISE;
+
+    if (player.bet > game.currentBet) {
+      game.currentBet = player.bet;
+    } else if (toCall > 0) {
+      // Not enough chips to complete a legal raise -> treated as call/all-in.
+      player.action = ACTION.CALL;
+    }
+
+    if (player.stack === 0) {
+      player.status = PLAYER_STATUS.ALL_IN;
+      player.action = ACTION.ALLIN;
+    }
+    return;
+  }
+
+  // Unknown action: auto-fold for safety.
+  player.status = PLAYER_STATUS.FOLDED;
+  player.action = ACTION.FOLD;
 }
 
 /**

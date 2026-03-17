@@ -46,7 +46,7 @@ async function handler(event) {
 async function processHandHttp(event) {
   try {
     const body = JSON.parse(event.body || '{}');
-    const { tableId } = body;
+    const { tableId, action, amount, seat } = body;
 
     if (!tableId) {
       return {
@@ -56,7 +56,8 @@ async function processHandHttp(event) {
       };
     }
 
-    const result = await processTable(tableId);
+    const actionRequest = action ? { action, amount, seat } : null;
+    const result = await processTable(tableId, actionRequest);
 
     return {
       statusCode: 200,

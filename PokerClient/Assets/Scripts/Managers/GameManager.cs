@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using DG.Tweening;
 using HijackPoker.Api;
+using HijackPoker.Models;
 
 namespace HijackPoker.Managers
 {
@@ -17,6 +18,7 @@ namespace HijackPoker.Managers
         [SerializeField] private float _autoPlaySpeed = 1f;
 
         public bool IsAutoPlaying { get; private set; }
+        public TableResponse CurrentState => _stateManager != null ? _stateManager.CurrentState : null;
 
         private bool _isProcessing;
         private Coroutine _autoPlayCoroutine;
@@ -62,14 +64,17 @@ namespace HijackPoker.Managers
             }
         }
 
-        public async Task AdvanceStepAsync()
+        public async Task AdvanceStepAsync(string action = null, float amount = 0f)
         {
             if (_isProcessing) return;
             _isProcessing = true;
 
             try
             {
-                var processResult = await _apiClient.ProcessStepAsync(_tableId);
+                int actingSeat = _stateManager != null && _stateManager.CurrentState != null
+                    ? _stateManager.CurrentState.Game.Move
+                    : 0;
+                var processResult = await _apiClient.ProcessStepAsync(_tableId, action, amount, actingSeat);
                 if (processResult == null || !processResult.Success)
                 {
                     _stateManager.NotifyConnectionStatus("Error: Process step failed");
@@ -128,7 +133,7 @@ namespace HijackPoker.Managers
                 yield return new WaitForSeconds(_autoPlaySpeed);
                 if (!_isProcessing)
                 {
-                    _ = AdvanceStepAsync();
+                    _ = AdvanceStepAsync(null, 0f);
                 }
             }
         }

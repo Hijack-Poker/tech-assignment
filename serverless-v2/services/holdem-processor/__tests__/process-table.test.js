@@ -24,7 +24,7 @@ const {
   payWinners,
   recordStatsAndNewHand,
 } = require('../lib/process-table');
-const { GAME_HAND, PLAYER_STATUS } = require('../shared/games/common/constants');
+const { GAME_HAND, PLAYER_STATUS, ACTION } = require('../shared/games/common/constants');
 
 /**
  * Helper: create a minimal game state for testing.
@@ -315,7 +315,10 @@ describe('Process Table — Hand State Machine', () => {
       const runRoundUntilAdvanced = (state, round, expectedRoundStep) => {
         let guard = 0;
         while (state.game.handStep === expectedRoundStep && guard < 10) {
-          state = bettingRound(state.game, state.players, round);
+          state = bettingRound(state.game, state.players, round, {
+            action: ACTION.CALL,
+            seat: state.game.move,
+          });
           guard += 1;
         }
         expect(guard).toBeLessThan(10);
