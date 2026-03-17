@@ -260,6 +260,24 @@ public static class RebuildScene
         var hudBorderImg = hudBorder.AddComponent<Image>();
         hudBorderImg.color = H("78C6D6", 0.2f);
         Anch(hudBorder, 0, 0, 1, 0, Vector2.zero, new Vector2(0, 1));
+        // ── Exit button inside HUD (top-right "X") ──
+        var eb = new GameObject("TopRightExitBtn", typeof(RectTransform), typeof(Image), typeof(Button));
+        eb.transform.SetParent(hud.transform, false);
+        var ebRT = eb.GetComponent<RectTransform>();
+        ebRT.anchorMin = new Vector2(1, 1); ebRT.anchorMax = new Vector2(1, 1);
+        ebRT.pivot = new Vector2(1, 1); ebRT.anchoredPosition = new Vector2(-4, -4);
+        ebRT.sizeDelta = new Vector2(42, 42);
+        var ebImg = eb.GetComponent<Image>(); ebImg.color = H("CC3D42", 0.96f);
+        var ebLbl = UI("Label", eb.transform);
+        Stretch(ebLbl);
+        var ebTxt = ebLbl.AddComponent<TextMeshProUGUI>();
+        ebTxt.text = "\u2715"; ebTxt.fontSize = 24; ebTxt.fontStyle = FontStyles.Bold;
+        ebTxt.alignment = TextAlignmentOptions.Center; ebTxt.color = Color.white;
+        ebTxt.raycastTarget = false;
+        var ebBtn = eb.GetComponent<Button>();
+        ebBtn.transition = UnityEngine.UI.Selectable.Transition.ColorTint;
+        var ebNav = ebBtn.navigation; ebNav.mode = UnityEngine.UI.Navigation.Mode.None; ebBtn.navigation = ebNav;
+
         var hudView = hud.AddComponent<HijackPoker.UI.HudView>();
 
         // ══════ CONTROLS ══════
@@ -330,10 +348,6 @@ public static class RebuildScene
         var sep2Img = sep2.AddComponent<Image>(); sep2Img.color = H("FFFFFF", 0.08f);
         sep2.AddComponent<LayoutElement>().preferredWidth = 1;
         sep2.GetComponent<LayoutElement>().preferredHeight = 30;
-
-        // ── Exit button (red-ish to stand out) ──
-        var eb = FancyBtn("ExitButton", "EXIT", ctrl.transform, 120, 70,
-            H("8B2C2C"), H("C04545"), H("6B1E1E"));
 
         var ctrlView = ctrl.AddComponent<HijackPoker.UI.ControlsView>();
 
@@ -424,15 +438,14 @@ public static class RebuildScene
         var tvSO = new SerializedObject(tableView);
         tvSO.FindProperty("_chipFlySprite").objectReferenceValue = _chipSprites[0];
         tvSO.ApplyModifiedProperties();
-        W(hudView, "_stateManager", sm); W(hudView, "_phaseLabel", phT);
+        W(hudView, "_stateManager", sm); W(hudView, "_gameManager", gm); W(hudView, "_phaseLabel", phT);
         W(hudView, "_handNumberText", hnT); W(hudView, "_actionText", acT); W(hudView, "_potText", pdT);
-        W(hudView, "_potChipImage", potChipImg);
+        W(hudView, "_potChipImage", potChipImg); W(hudView, "_exitButton", ebBtn);
         W(ctrlView, "_gameManager", gm);
         W(ctrlView, "_nextStepButton", nb.GetComponent<Button>());
         W(ctrlView, "_autoPlayButton", ab.GetComponent<Button>());
         W(ctrlView, "_autoPlayButtonText", abTxt);
         WArr(ctrlView, "_speedButtons", sBtns); WArr(ctrlView, "_speedButtonImages", sImgs);
-        W(ctrlView, "_exitButton", eb.GetComponent<Button>());
         W(histView, "_stateManager", sm); W(histView, "_content", cnt.transform);
         W(histView, "_scrollRect", sr); W(histView, "_entryPrefab", pfb);
         // EventSystem

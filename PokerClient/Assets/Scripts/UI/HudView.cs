@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 using TMPro;
 using DG.Tweening;
 using HijackPoker.Managers;
@@ -11,13 +12,26 @@ namespace HijackPoker.UI
     public class HudView : MonoBehaviour
     {
         [SerializeField] private TableStateManager _stateManager;
+        [SerializeField] private GameManager _gameManager;
         [SerializeField] private TextMeshProUGUI _phaseLabel;
         [SerializeField] private TextMeshProUGUI _handNumberText;
         [SerializeField] private TextMeshProUGUI _actionText;
         [SerializeField] private TextMeshProUGUI _potText;
         [SerializeField] private Image _potChipImage;
+        [SerializeField] private Button _exitButton;
 
         private float _displayedPot;
+
+        private void Awake()
+        {
+            if (_exitButton == null)
+            {
+                var btn = transform.Find("TopRightExitBtn");
+                if (btn != null) _exitButton = btn.GetComponent<Button>();
+            }
+            if (_exitButton != null)
+                _exitButton.onClick.AddListener(OnExitClicked);
+        }
 
         private void OnEnable() => _stateManager.OnTableStateChanged += OnStateChanged;
         private void OnDisable() => _stateManager.OnTableStateChanged -= OnStateChanged;
@@ -51,6 +65,13 @@ namespace HijackPoker.UI
             {
                 _actionText.gameObject.SetActive(false);
             }
+        }
+
+        private void OnExitClicked()
+        {
+            if (_gameManager != null && _gameManager.IsAutoPlaying)
+                _gameManager.ToggleAutoPlay();
+            SceneManager.LoadScene("HomeScene");
         }
 
         private void OnDestroy()

@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.SceneManagement;
 using TMPro;
 using HijackPoker.Managers;
 using HijackPoker.Models;
@@ -18,7 +17,6 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _autoPlayButtonText;
         [SerializeField] private Button[] _speedButtons;
         [SerializeField] private Image[] _speedButtonImages;
-        [SerializeField] private Button _exitButton;
         [SerializeField] private GameObject _actionPanel;
         [SerializeField] private Button _foldButton;
         [SerializeField] private Button _callButton;
@@ -31,14 +29,17 @@ namespace HijackPoker.UI
         private static readonly Color AutoPlayIdleColor = new Color(0.12f, 0.49f, 0.86f);
 
         private int _selectedSpeedIndex = 2;
+        private float _currentToCall;
+        private float _currentMinRaise;
+        private bool _canActNow;
+        private bool _canRaiseNow;
 
         private void Awake()
         {
+            RemoveLegacyControlsChildren();
             EnsureActionPanel();
             _nextStepButton.onClick.AddListener(OnNextStepClicked);
             _autoPlayButton.onClick.AddListener(OnAutoPlayClicked);
-            if (_exitButton != null)
-                _exitButton.onClick.AddListener(OnExitClicked);
             if (_foldButton != null) _foldButton.onClick.AddListener(OnFoldClicked);
             if (_callButton != null) _callButton.onClick.AddListener(OnCallClicked);
             if (_raiseButton != null) _raiseButton.onClick.AddListener(OnRaiseClicked);
@@ -52,11 +53,26 @@ namespace HijackPoker.UI
             RefreshSpeedButtons();
         }
 
+        private void RemoveLegacyControlsChildren()
+        {
+            RemoveChildIfExists("Separator");
+            RemoveChildIfExists("Separator2");
+            RemoveChildIfExists("ExitButton");
+        }
+
+        private void RemoveChildIfExists(string childName)
+        {
+            var child = transform.Find(childName);
+            if (child != null)
+                Destroy(child.gameObject);
+        }
+
         private void Update()
         {
             var state = _gameManager.CurrentState;
-            bool localCanAct = CanLocalPlayerAct(state);
             bool inBettingStep = state?.Game != null && IsBettingStep(state.Game.HandStep);
+            bool driverCanAct = inBettingStep && state?.Game != null && state.Game.Move > 0;
+            ComputeActionContext(state, inBettingStep, driverCanAct);
 
             _nextStepButton.interactable = !_gameManager.IsAutoPlaying && !inBettingStep;
 
@@ -70,14 +86,21 @@ namespace HijackPoker.UI
 
             if (_actionPanel != null)
                 _actionPanel.SetActive(inBettingStep);
-            if (_foldButton != null) _foldButton.interactable = inBettingStep;
-            if (_callButton != null) _callButton.interactable = inBettingStep;
-            if (_raiseButton != null) _raiseButton.interactable = inBettingStep;
+            if (_foldButton != null) _foldButton.interactable = _canActNow;
+            if (_callButton != null) _callButton.interactable = _canActNow;
+            if (_raiseButton != null) _raiseButton.interactable = _canActNow && _canRaiseNow;
+            SetActionButtonLabels();
             if (_actionHintText != null)
             {
                 if (!inBettingStep) _actionHintText.text = "";
-                else if (localCanAct) _actionHintText.text = "Your turn (20s): Fold, Call, or Raise";
-                else _actionHintText.text = $"Acting seat {state.Game.Move}: choose Fold / Call / Raise";
+                else if (driverCanAct)
+                {
+                    if (_currentToCall <= 0f)
+                        _actionHintText.text = $"Your turn (20s): Check, {( _canRaiseNow ? "Bet" : "No Raise" )}, or Fold";
+                    else
+                        _actionHintText.text = $"Your turn (20s): Fold, Call {_currentToCall:0.##}, or Raise";
+                }
+                else _actionHintText.text = $"Acting seat {state.Game.Move}: waiting for action";
             }
         }
 
@@ -98,25 +121,26 @@ namespace HijackPoker.UI
             RefreshSpeedButtons();
         }
 
-        private void OnExitClicked()
-        {
-            if (_gameManager.IsAutoPlaying)
-                _gameManager.ToggleAutoPlay();
-            SceneManager.LoadScene("HomeScene");
-        }
-
         private void OnFoldClicked()
         {
+            if (!_canActNow) return;
             _ = _gameManager.AdvanceStepAsync("fold", 0f);
         }
 
         private void OnCallClicked()
         {
-            _ = _gameManager.AdvanceStepAsync("call", 0f);
+            if (!_canActNow) return;
+
+            if (_currentToCall <= 0f)
+                _ = _gameManager.AdvanceStepAsync("check", 0f);
+            else
+                _ = _gameManager.AdvanceStepAsync("call", _currentToCall);
         }
 
         private void OnRaiseClicked()
         {
+            if (!_canActNow || !_canRaiseNow) return;
+
             var state = _gameManager.CurrentState;
             if (state?.Game == null)
             {
@@ -124,12 +148,11 @@ namespace HijackPoker.UI
                 return;
             }
 
-            int localSeat = ResolveLocalSeat(state);
-            var me = state.Players != null ? state.Players.Find(p => p.Seat == localSeat) : null;
-            float myBet = me != null ? me.Bet : 0f;
-            float toCall = Mathf.Max(0f, state.Game.CurrentBet - myBet);
-            float raiseAdd = toCall + Mathf.Max(state.Game.BigBlind, 1f);
-            _ = _gameManager.AdvanceStepAsync("raise", raiseAdd);
+            float amount = Mathf.Max(_currentMinRaise, Mathf.Max(state.Game.BigBlind, 1f));
+            if (_currentToCall <= 0f)
+                _ = _gameManager.AdvanceStepAsync("bet", amount);
+            else
+                _ = _gameManager.AdvanceStepAsync("raise", amount);
         }
 
         private static bool IsBettingStep(int step)
@@ -155,19 +178,65 @@ namespace HijackPoker.UI
             return me != null ? me.Seat : 1;
         }
 
+        private void ComputeActionContext(TableResponse state, bool inBettingStep, bool driverCanAct)
+        {
+            _canActNow = false;
+            _currentToCall = 0f;
+            _currentMinRaise = 0f;
+            _canRaiseNow = false;
+
+            if (!inBettingStep || !driverCanAct || state?.Game == null)
+                return;
+
+            int actingSeat = state.Game.Move;
+            var actor = state.Players != null ? state.Players.Find(p => p.Seat == actingSeat) : null;
+            if (actor == null || actor.IsFolded || actor.IsAllIn)
+                return;
+
+            _canActNow = true;
+            _currentToCall = Mathf.Max(0f, state.Game.CurrentBet - actor.Bet);
+            float minRaiseUnit = Mathf.Max(state.Game.BigBlind, 1f);
+            _currentMinRaise = _currentToCall + minRaiseUnit;
+            _canRaiseNow = actor.Stack > _currentToCall + 0.01f;
+        }
+
+        private void SetActionButtonLabels()
+        {
+            SetButtonLabel(_foldButton, "FOLD");
+
+            if (_currentToCall <= 0f)
+                SetButtonLabel(_callButton, "CHECK");
+            else
+                SetButtonLabel(_callButton, $"CALL {_currentToCall:0.#}");
+
+            if (_currentToCall <= 0f)
+                SetButtonLabel(_raiseButton, $"BET {Mathf.Max(_currentMinRaise, 1f):0.#}");
+            else
+                SetButtonLabel(_raiseButton, $"RAISE {Mathf.Max(_currentMinRaise, 1f):0.#}");
+        }
+
+        private static void SetButtonLabel(Button button, string text)
+        {
+            if (button == null) return;
+            var label = button.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null)
+                label.text = text;
+        }
+
         private void EnsureActionPanel()
         {
             if (_actionPanel != null && _foldButton != null && _callButton != null && _raiseButton != null)
                 return;
 
             var panel = new GameObject("ActionPanel", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup));
-            panel.transform.SetParent(transform, false);
+            var canvas = GetComponentInParent<Canvas>();
+            panel.transform.SetParent(canvas != null ? canvas.transform : transform, false);
             var panelRt = panel.GetComponent<RectTransform>();
-            panelRt.anchorMin = new Vector2(0.5f, 1f);
-            panelRt.anchorMax = new Vector2(0.5f, 1f);
-            panelRt.pivot = new Vector2(0.5f, 1f);
-            panelRt.anchoredPosition = new Vector2(0f, 84f);
-            panelRt.sizeDelta = new Vector2(540f, 56f);
+            panelRt.anchorMin = new Vector2(0f, 0f);
+            panelRt.anchorMax = new Vector2(1f, 0f);
+            panelRt.pivot = new Vector2(0.5f, 0f);
+            panelRt.anchoredPosition = new Vector2(0f, 86f);
+            panelRt.sizeDelta = new Vector2(0f, 56f);
 
             var panelImg = panel.GetComponent<Image>();
             panelImg.color = new Color(0.05f, 0.12f, 0.20f, 0.93f);
