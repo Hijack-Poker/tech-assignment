@@ -70,14 +70,14 @@ namespace HijackPoker.UI
 
             if (_actionPanel != null)
                 _actionPanel.SetActive(inBettingStep);
-            if (_foldButton != null) _foldButton.interactable = localCanAct;
-            if (_callButton != null) _callButton.interactable = localCanAct;
-            if (_raiseButton != null) _raiseButton.interactable = localCanAct;
+            if (_foldButton != null) _foldButton.interactable = inBettingStep;
+            if (_callButton != null) _callButton.interactable = inBettingStep;
+            if (_raiseButton != null) _raiseButton.interactable = inBettingStep;
             if (_actionHintText != null)
             {
                 if (!inBettingStep) _actionHintText.text = "";
                 else if (localCanAct) _actionHintText.text = "Your turn (20s): Fold, Call, or Raise";
-                else _actionHintText.text = $"Seat {state.Game.Move} options: Fold / Call / Raise";
+                else _actionHintText.text = $"Acting seat {state.Game.Move}: choose Fold / Call / Raise";
             }
         }
 

@@ -97,7 +97,7 @@ namespace HijackPoker.UI
             _sbBadge.SetActive(player.Seat == game.SmallBlindSeat);
             _bbBadge.SetActive(player.Seat == game.BigBlindSeat);
 
-            _canvasGroup.alpha = player.IsFolded ? 0.4f : 1f;
+            ApplyFoldVisual(player.IsFolded);
             _borderImage.color = player.IsAllIn ? AllInColor
                 : _isLocalPlayer ? PlayerBorderColor
                 : Color.clear;
@@ -119,6 +119,8 @@ namespace HijackPoker.UI
 
             bool isWinner = player.IsWinner;
             var baseColor = _isLocalPlayer ? PlayerColor : NormalColor;
+            if (player.IsFolded)
+                baseColor.a *= 0.72f;
             if (isWinner)
             {
                 _backgroundImage.color = baseColor;
@@ -250,6 +252,43 @@ namespace HijackPoker.UI
 
             _turnTimerRing = img;
             _turnTimerRing.gameObject.SetActive(false);
+        }
+
+        private void ApplyFoldVisual(bool isFolded)
+        {
+            // Dim card sprites directly (no rectangular overlay box).
+            if (_canvasGroup != null) _canvasGroup.alpha = 1f;
+            if (_card1 != null) _card1.SetDimmed(isFolded);
+            if (_card2 != null) _card2.SetDimmed(isFolded);
+
+            float uiAlpha = isFolded ? 0.65f : 1f;
+
+            if (_nameText != null) _nameText.alpha = uiAlpha;
+            if (_stackText != null) _stackText.alpha = uiAlpha;
+            if (_betText != null) _betText.alpha = uiAlpha;
+            if (_actionText != null) _actionText.alpha = uiAlpha;
+            if (_avatarInitialText != null) _avatarInitialText.alpha = uiAlpha;
+
+            if (_avatarImage != null)
+            {
+                var c = _avatarImage.color;
+                c.a = uiAlpha;
+                _avatarImage.color = c;
+            }
+
+            if (_avatarRingImage != null)
+            {
+                var c = _avatarRingImage.color;
+                c.a = isFolded ? 0.75f : 1f;
+                _avatarRingImage.color = c;
+            }
+
+            if (_betChipImage != null)
+            {
+                var c = _betChipImage.color;
+                c.a = uiAlpha;
+                _betChipImage.color = c;
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ namespace HijackPoker.UI
     public class CardView : MonoBehaviour
     {
         [SerializeField] private Image _cardImage;
+        [SerializeField] private Color _foldDimTint = new Color(0.72f, 0.74f, 0.78f, 1f);
 
         private static readonly Color EmptyColor = new Color(0.15f, 0.15f, 0.2f, 0.3f);
 
@@ -20,6 +21,8 @@ namespace HijackPoker.UI
         private static Sprite _redBack;
 
         private bool _wasFaceDown = true;
+        private bool _isDimmed;
+        private Color _baseColor = Color.white;
 
         private static readonly System.Collections.Generic.Dictionary<string, string> SuitNames = new()
         {
@@ -52,12 +55,12 @@ namespace HijackPoker.UI
             if (sprite != null)
             {
                 _cardImage.sprite = sprite;
-                _cardImage.color = Color.white;
+                SetBaseColor(Color.white);
             }
             else
             {
                 _cardImage.sprite = null;
-                _cardImage.color = new Color(0.1f, 0.2f, 0.5f);
+                SetBaseColor(new Color(0.1f, 0.2f, 0.5f));
             }
             _wasFaceDown = true;
         }
@@ -89,7 +92,13 @@ namespace HijackPoker.UI
             gameObject.SetActive(true);
             _wasFaceDown = true;
             _cardImage.sprite = null;
-            _cardImage.color = EmptyColor;
+            SetBaseColor(EmptyColor);
+        }
+
+        public void SetDimmed(bool dimmed)
+        {
+            _isDimmed = dimmed;
+            RefreshVisualColor();
         }
 
         private void ApplySprite(string cardCode, bool faceUp)
@@ -105,12 +114,12 @@ namespace HijackPoker.UI
                 if (sprite != null)
                 {
                     _cardImage.sprite = sprite;
-                    _cardImage.color = Color.white;
+                    SetBaseColor(Color.white);
                 }
                 else
                 {
                     _cardImage.sprite = null;
-                    _cardImage.color = new Color(1f, 0.98f, 0.94f);
+                    SetBaseColor(new Color(1f, 0.98f, 0.94f));
                     Debug.LogWarning($"Card sprite not found: Cards/{spriteName}");
                 }
             }
@@ -119,13 +128,37 @@ namespace HijackPoker.UI
                 if (_redBack != null)
                 {
                     _cardImage.sprite = _redBack;
-                    _cardImage.color = Color.white;
+                    SetBaseColor(Color.white);
                 }
                 else
                 {
                     _cardImage.sprite = null;
-                    _cardImage.color = new Color(0.5f, 0.1f, 0.1f);
+                    SetBaseColor(new Color(0.5f, 0.1f, 0.1f));
                 }
+            }
+        }
+
+        private void SetBaseColor(Color color)
+        {
+            _baseColor = color;
+            RefreshVisualColor();
+        }
+
+        private void RefreshVisualColor()
+        {
+            if (_cardImage == null) return;
+
+            if (_isDimmed)
+            {
+                _cardImage.color = new Color(
+                    _baseColor.r * _foldDimTint.r,
+                    _baseColor.g * _foldDimTint.g,
+                    _baseColor.b * _foldDimTint.b,
+                    _baseColor.a);
+            }
+            else
+            {
+                _cardImage.color = _baseColor;
             }
         }
 
