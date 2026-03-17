@@ -22,7 +22,6 @@ namespace HijackPoker.UI
         [Header("Avatar Selection")]
         [SerializeField] private Transform _avatarGrid;
         [SerializeField] private CanvasGroup _avatarGridGroup;
-        [SerializeField] private Image _selectedAvatarPreview;
         [SerializeField] private Image _avatarBtnTemplate;
 
         private static readonly Color DisabledBtn = new Color(0.20f, 0.25f, 0.32f);
@@ -42,6 +41,7 @@ namespace HijackPoker.UI
             _subtitle.alpha = 0f;
             _playButton.GetComponent<CanvasGroup>().alpha = 0f;
             _nameInputGroup.alpha = 0f;
+            if (_avatarGridGroup != null) _avatarGridGroup.alpha = 0f;
             _heroCard1.color = new Color(1, 1, 1, 0);
             _heroCard2.color = new Color(1, 1, 1, 0);
             _scatteredGroup.alpha = 0f;
@@ -81,7 +81,11 @@ namespace HijackPoker.UI
             // 5. Name input
             _entranceSeq.Append(FadeCG(_nameInputGroup, 1f, 0.3f));
 
-            // 6. Play button (starts disabled)
+            // 6. Avatar section fades in
+            if (_avatarGridGroup != null)
+                _entranceSeq.Append(FadeCG(_avatarGridGroup, 1f, 0.3f));
+
+            // 7. Play button (starts disabled)
             _playButton.interactable = false;
             _playButtonImage.color = DisabledBtn;
             var btnCG = _playButton.GetComponent<CanvasGroup>();
@@ -102,13 +106,24 @@ namespace HijackPoker.UI
             if (_avatarGrid == null || _avatarBtnTemplate == null) return;
             _avatarBtnTemplate.gameObject.SetActive(false);
 
-            var avatars = Resources.LoadAll<Sprite>("Avatars");
-            foreach (var sprite in avatars)
+            var allAvatars = Resources.LoadAll<Sprite>("Avatars");
+            if (allAvatars.Length == 0) return;
+
+            // Shuffle and pick 4
+            var list = new System.Collections.Generic.List<Sprite>(allAvatars);
+            for (int i = list.Count - 1; i > 0; i--)
             {
+                int j = Random.Range(0, i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
+            int count = Mathf.Min(4, list.Count);
+
+            for (int i = 0; i < count; i++)
+            {
+                var sprite = list[i];
                 var go = Instantiate(_avatarBtnTemplate.gameObject, _avatarGrid);
                 go.SetActive(true);
-                var img = go.GetComponent<Image>();
-                // Find the child avatar image
+                go.name = sprite.name;
                 var avatarImg = go.transform.Find("Icon")?.GetComponent<Image>();
                 if (avatarImg != null)
                 {
@@ -118,35 +133,38 @@ namespace HijackPoker.UI
                 var btn = go.GetComponent<Button>();
                 if (btn == null) btn = go.AddComponent<Button>();
                 string spriteName = sprite.name;
-                btn.onClick.AddListener(() => SelectAvatar(spriteName, sprite));
+                btn.onClick.AddListener(() => SelectAvatar(spriteName));
             }
 
-            // Pre-select first avatar
-            if (avatars.Length > 0)
-                SelectAvatar(avatars[0].name, avatars[0]);
+            // Pre-select first
+            SelectAvatar(list[0].name);
         }
 
-        private void SelectAvatar(string name, Sprite sprite)
+        private void SelectAvatar(string name)
         {
             _selectedAvatar = name;
-            if (_selectedAvatarPreview != null)
+            if (_avatarGrid == null) return;
+
+            foreach (Transform child in _avatarGrid)
             {
-                _selectedAvatarPreview.sprite = sprite;
-                _selectedAvatarPreview.color = Color.white;
-            }
-            // Highlight selected in grid
-            if (_avatarGrid != null)
-            {
-                foreach (Transform child in _avatarGrid)
+                if (!child.gameObject.activeSelf) continue;
+                bool isSelected = child.name == name;
+                var outline = child.GetComponent<Outline>();
+                if (outline != null)
+                    outline.effectColor = isSelected
+                        ? new Color(0.39f, 0.87f, 0.86f, 1f)
+                        : new Color(1, 1, 1, 0);
+                // Punch the selected one
+                if (isSelected)
                 {
-                    if (!child.gameObject.activeSelf) continue;
-                    var outline = child.GetComponent<Outline>();
-                    var iconImg = child.Find("Icon")?.GetComponent<Image>();
-                    bool isSelected = iconImg != null && iconImg.sprite != null && iconImg.sprite.name == name;
-                    if (outline != null)
-                        outline.effectColor = isSelected
-                            ? new Color(0.39f, 0.87f, 0.86f, 1f)
-                            : new Color(1, 1, 1, 0);
+                    child.DOKill();
+                    child.localScale = Vector3.one;
+                    child.DOPunchScale(Vector3.one * 0.15f, 0.25f, 6, 0.5f);
+                }
+                else
+                {
+                    child.DOKill();
+                    child.localScale = Vector3.one;
                 }
             }
         }
