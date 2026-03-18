@@ -4,97 +4,18 @@ const { PLAYER_STATUS, ACTION } = require('./constants');
 const { toMoney } = require('../../utils');
 
 /**
- * Process a player action (call, check, bet, raise, fold, allin).
- * Mutates the player and game state. Returns updated state.
- */
-function processAction(game, player, action, amount = 0) {
-  switch (action) {
-    case ACTION.FOLD:
-      player.status = PLAYER_STATUS.FOLDED;
-      player.action = ACTION.FOLD;
-      break;
-
-    case ACTION.CHECK:
-      player.action = ACTION.CHECK;
-      break;
-
-    case ACTION.CALL: {
-      const callAmount = Math.min(game.currentBet - player.bet, player.stack);
-      player.stack = toMoney(player.stack - callAmount);
-      player.bet = toMoney(player.bet + callAmount);
-      player.totalBet = toMoney(player.totalBet + callAmount);
-      player.action = ACTION.CALL;
-      if (player.stack === 0) {
-        player.status = PLAYER_STATUS.ALL_IN;
-        player.action = ACTION.ALLIN;
-      }
-      break;
-    }
-
-    case ACTION.BET: {
-      const betAmount = Math.min(amount, player.stack);
-      player.stack = toMoney(player.stack - betAmount);
-      player.bet = toMoney(player.bet + betAmount);
-      player.totalBet = toMoney(player.totalBet + betAmount);
-      player.action = ACTION.BET;
-      game.currentBet = player.bet;
-      if (player.stack === 0) {
-        player.status = PLAYER_STATUS.ALL_IN;
-        player.action = ACTION.ALLIN;
-      }
-      break;
-    }
-
-    case ACTION.RAISE: {
-      const raiseAmount = Math.min(amount, player.stack);
-      player.stack = toMoney(player.stack - raiseAmount);
-      player.bet = toMoney(player.bet + raiseAmount);
-      player.totalBet = toMoney(player.totalBet + raiseAmount);
-      player.action = ACTION.RAISE;
-      game.currentBet = player.bet;
-      if (player.stack === 0) {
-        player.status = PLAYER_STATUS.ALL_IN;
-        player.action = ACTION.ALLIN;
-      }
-      break;
-    }
-
-    case ACTION.ALLIN: {
-      const allInAmount = player.stack;
-      player.bet = toMoney(player.bet + allInAmount);
-      player.totalBet = toMoney(player.totalBet + allInAmount);
-      player.stack = 0;
-      player.status = PLAYER_STATUS.ALL_IN;
-      player.action = ACTION.ALLIN;
-      if (player.bet > game.currentBet) {
-        game.currentBet = player.bet;
-      }
-      break;
-    }
-  }
-
-  return { game, player };
-}
-
-/**
- * Check if a betting round is complete.
- * A round is complete when all active (non-folded, non-allin) players have acted
- * and all bets are equal to the current bet.
+ * A betting round is complete when every ACTIVE player has acted
+ * (action !== '') and their bet matches the current bet.
+ * All-in and folded players are excluded from this check.
  */
 function isBettingRoundComplete(players, currentBet) {
-  const activePlayers = players.filter(
-    (p) => p.status === PLAYER_STATUS.ACTIVE
-  );
-
-  if (activePlayers.length === 0) return true;
-
-  return activePlayers.every(
-    (p) => p.action !== '' && p.bet === currentBet
-  );
+  const active = players.filter((p) => p.status === PLAYER_STATUS.ACTIVE);
+  if (active.length === 0) return true;
+  return active.every((p) => p.action !== '' && p.bet >= currentBet);
 }
 
 /**
- * Collect bets into the pot and reset for next round.
+ * Collect bets into the pot and reset per-street state.
  */
 function collectBets(game, players) {
   let collected = 0;
@@ -105,49 +26,139 @@ function collectBets(game, players) {
   }
   game.pot = toMoney(game.pot + collected);
   game.currentBet = 0;
+  game.lastRaiseSize = game.bigBlind;
+  game.noReopenSeats = [];
   return { game, players, collected };
 }
 
 /**
- * Get the minimum raise amount (2x the current bet, or big blind if no bet).
+ * Minimum legal raise-to amount = currentBet + lastRaiseSize.
  */
-function getMinRaise(currentBet, bigBlind) {
-  return currentBet > 0 ? currentBet * 2 : bigBlind;
+function getMinRaiseTo(game) {
+  return toMoney(game.currentBet + (game.lastRaiseSize || game.bigBlind));
 }
 
 /**
- * Get valid actions for a player given the current game state.
+ * Get the set of legal actions for a player given the current game state.
  */
-function getValidActions(player, currentBet, bigBlind) {
+function getValidActions(player, game) {
+  if (player.status !== PLAYER_STATUS.ACTIVE) return [];
+
   const actions = [ACTION.FOLD];
+  const toCall = Math.max(0, toMoney(game.currentBet - player.bet));
+  const canRaise = !(game.noReopenSeats || []).includes(player.seat);
+  const lastRaise = game.lastRaiseSize || game.bigBlind;
 
-  if (player.bet === currentBet) {
+  if (toCall === 0) {
     actions.push(ACTION.CHECK);
-  }
-
-  if (currentBet > player.bet && player.stack > 0) {
+  } else {
     actions.push(ACTION.CALL);
   }
 
-  if (currentBet === 0 && player.stack > 0) {
-    actions.push(ACTION.BET);
+  // Full raise/bet option
+  if (canRaise && player.stack > 0) {
+    if (game.currentBet === 0) {
+      // Opening bet (postflop, no bet yet)
+      if (player.stack >= game.bigBlind) {
+        actions.push(ACTION.BET);
+      }
+    } else {
+      // Raise over existing bet
+      const minRaiseTotal = toMoney(game.currentBet + lastRaise);
+      const chipsNeeded = toMoney(minRaiseTotal - player.bet);
+      if (player.stack >= chipsNeeded) {
+        actions.push(ACTION.RAISE);
+      }
+    }
   }
 
-  if (currentBet > 0 && player.stack > (currentBet - player.bet)) {
-    actions.push(ACTION.RAISE);
-  }
-
+  // All-in: always available if stack > 0, unless reopen is blocked and
+  // going all-in would exceed the current bet (which is effectively a raise).
   if (player.stack > 0) {
-    actions.push(ACTION.ALLIN);
+    const allInBet = toMoney(player.bet + player.stack);
+    if (canRaise || allInBet <= game.currentBet) {
+      actions.push(ACTION.ALLIN);
+    }
   }
 
   return actions;
 }
 
+/**
+ * Validate a requested action. Returns { valid, action, amount } or
+ * { valid: false, reason, message }.
+ *
+ * Amount conventions:
+ *   BET:   amount = total bet size (chips from stack).
+ *   RAISE: amount = raise-TO target (player.bet will become this value).
+ *          If 0 or omitted, defaults to minimum legal raise.
+ */
+function validateAction(player, game, requestedAction) {
+  if (!requestedAction || !requestedAction.action) {
+    return { valid: false, reason: 'NO_ACTION', message: 'No action provided' };
+  }
+
+  let action = String(requestedAction.action).toLowerCase();
+  const toCall = Math.max(0, toMoney(game.currentBet - player.bet));
+
+  // Normalize common mismatches
+  if (action === ACTION.CALL && toCall === 0) action = ACTION.CHECK;
+  if (action === ACTION.BET && game.currentBet > 0) action = ACTION.RAISE;
+  if (action === ACTION.RAISE && game.currentBet === 0) action = ACTION.BET;
+
+  const validActions = getValidActions(player, game);
+  if (!validActions.includes(action)) {
+    return {
+      valid: false,
+      reason: 'ILLEGAL_ACTION',
+      message: `Action '${action}' is not legal. Valid: ${validActions.join(', ')}`,
+    };
+  }
+
+  switch (action) {
+    case ACTION.FOLD:
+    case ACTION.CHECK:
+    case ACTION.CALL:
+    case ACTION.ALLIN:
+      return { valid: true, action, amount: 0 };
+
+    case ACTION.BET: {
+      const amount = Number(requestedAction.amount || 0);
+      const minBet = game.bigBlind;
+      const desiredBet = amount > 0 ? amount : minBet;
+      // Allow under-min only when it's an all-in
+      if (desiredBet < minBet && desiredBet < player.stack) {
+        return { valid: false, reason: 'BET_TOO_SMALL', message: `Min bet is ${minBet}` };
+      }
+      return { valid: true, action, amount: Math.min(desiredBet, player.stack) };
+    }
+
+    case ACTION.RAISE: {
+      const amount = Number(requestedAction.amount || 0);
+      const minRaiseTo = getMinRaiseTo(game);
+      const maxRaiseTo = toMoney(player.bet + player.stack);
+      const raiseToTarget = amount > 0 ? amount : minRaiseTo;
+
+      // Under-min is only legal as an all-in
+      if (raiseToTarget < minRaiseTo && maxRaiseTo >= minRaiseTo) {
+        return {
+          valid: false,
+          reason: 'RAISE_TOO_SMALL',
+          message: `Min raise to ${minRaiseTo}`,
+        };
+      }
+      return { valid: true, action, amount: Math.min(raiseToTarget, maxRaiseTo) };
+    }
+
+    default:
+      return { valid: false, reason: 'UNKNOWN_ACTION', message: `Unknown: ${action}` };
+  }
+}
+
 module.exports = {
-  processAction,
   isBettingRoundComplete,
   collectBets,
-  getMinRaise,
+  getMinRaiseTo,
   getValidActions,
+  validateAction,
 };

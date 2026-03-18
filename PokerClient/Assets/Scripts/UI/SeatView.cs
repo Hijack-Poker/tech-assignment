@@ -46,6 +46,16 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _winningsText;
 
 
+        // Seat ring colors — must match RebuildScene.AvatarColors
+        public static readonly Color[] SeatRingColors = {
+            new Color(0.118f, 0.533f, 0.898f), // Seat 1 — #1E88E5 blue
+            new Color(0.898f, 0.224f, 0.208f), // Seat 2 — #E53935 red
+            new Color(0.263f, 0.627f, 0.278f), // Seat 3 — #43A047 green
+            new Color(0.984f, 0.549f, 0.000f), // Seat 4 — #FB8C00 orange
+            new Color(0.557f, 0.141f, 0.667f), // Seat 5 — #8E24AA purple
+            new Color(0.000f, 0.675f, 0.757f), // Seat 6 — #00ACC1 teal
+        };
+
         private static readonly Color NormalColor = new Color(0.04f, 0.09f, 0.14f, 0.9f);
         private static readonly Color PlayerColor = new Color(0.06f, 0.18f, 0.28f, 0.95f);
         private static readonly Color PlayerBorderColor = new Color(0.38f, 0.78f, 0.88f, 0.6f);
@@ -70,15 +80,36 @@ namespace HijackPoker.UI
 
         private Tweener _winnerPulseTween;
         private float _displayedStack;
+        private int _seatNumber;
+
+        // Runtime color lookup by seat number
+        private static readonly Dictionary<int, Color> _runtimeSeatColors = new();
+        public static Color GetSeatColor(int seat) =>
+            _runtimeSeatColors.TryGetValue(seat, out var c) ? c : Color.white;
 
         private void Awake()
         {
             RegisterCardClickHandlers();
+
+            // Register ring color early so HandHistoryView can use it
+            // Parse seat number from GameObject name (e.g. "Seat1" → 1)
+            string goName = gameObject.name;
+            if (goName.StartsWith("Seat") && int.TryParse(goName.Substring(4), out int seatNum))
+            {
+                _seatNumber = seatNum;
+                if (_avatarRingImage != null)
+                    _runtimeSeatColors[_seatNumber] = _avatarRingImage.color;
+            }
         }
 
         public void Render(PlayerState player, GameState game, string localPlayerName = null)
         {
             gameObject.SetActive(true);
+
+            // Register this seat's ring color for history view
+            _seatNumber = player.Seat;
+            if (_avatarRingImage != null)
+                _runtimeSeatColors[_seatNumber] = _avatarRingImage.color;
 
             // Check if this seat belongs to the local player (seat 1)
             bool nameMatch = !string.IsNullOrEmpty(localPlayerName) &&
@@ -116,13 +147,42 @@ namespace HijackPoker.UI
             _bbBadge.SetActive(player.Seat == game.BigBlindSeat);
 
             ApplyFoldVisual(player.IsFolded);
-            _borderImage.color = player.IsAllIn ? AllInColor
+
+            bool isWinner = player.IsWinner;
+
+            // Border: gold for winners, orange for all-in, blue for local, clear otherwise
+            _borderImage.color = isWinner ? GoldColor
+                : player.IsAllIn ? AllInColor
                 : _isLocalPlayer ? PlayerBorderColor
                 : Color.clear;
 
+            // Avatar ring: gold glow for winners, scaled up 2x with pulse
+            if (_avatarRingImage != null)
+            {
+                DOTween.Kill(_avatarRingImage);
+                DOTween.Kill(_avatarRingImage.transform);
+                if (isWinner)
+                {
+                    _avatarRingImage.color = GoldColor;
+                    // Scale up to 2x and pulse between 1.8x and 2.2x
+                    _avatarRingImage.transform.localScale = Vector3.one * 2f;
+                    _avatarRingImage.transform.DOScale(2.2f, 0.7f)
+                        .SetLoops(-1, LoopType.Yoyo)
+                        .SetEase(Ease.InOutSine)
+                        .SetTarget(_avatarRingImage.transform);
+                }
+                else
+                {
+                    _avatarRingImage.transform.localScale = Vector3.one;
+                    var rc = _avatarRingImage.color;
+                    rc.a = player.IsFolded ? 0.75f : 1f;
+                    _avatarRingImage.color = new Color(rc.r, rc.g, rc.b, rc.a);
+                }
+            }
+
             bool isActingTurn = IsBettingStep(game.HandStep) && game.Move == player.Seat;
             _isActingTurnNow = isActingTurn;
-            bool showCards = game.IsShowdown || player.IsWinner || isActingTurn;
+            bool showCards = game.IsShowdown || isWinner || isActingTurn;
             if (player.HasCards && player.Cards.Count >= 2)
             {
                 _card1Code = player.Cards[0];
@@ -142,18 +202,18 @@ namespace HijackPoker.UI
             // Winner animation
             if (_winnerPulseTween != null) { _winnerPulseTween.Kill(); _winnerPulseTween = null; }
 
-            bool isWinner = player.IsWinner;
             var baseColor = _isLocalPlayer ? PlayerColor : NormalColor;
             if (player.IsFolded)
                 baseColor.a *= 0.72f;
             if (isWinner)
             {
+                // Pulse gold then stay gold-tinted
                 _backgroundImage.color = baseColor;
                 _winnerPulseTween = DOTween.To(
                     () => _backgroundImage.color,
                     c => _backgroundImage.color = c,
-                    GoldColor, 0.4f)
-                    .SetLoops(6, LoopType.Yoyo)
+                    GoldColor, 0.5f)
+                    .SetLoops(-1, LoopType.Yoyo)
                     .SetEase(Ease.InOutSine);
 
                 _winningsText.text = MoneyFormatter.FormatGain(player.Winnings);
@@ -167,7 +227,11 @@ namespace HijackPoker.UI
                 _winningsText.text = "";
             }
 
-            _handRankText.text = isWinner && !string.IsNullOrEmpty(player.HandRank) ? player.HandRank : "";
+            // Show hand rank for all remaining players at showdown
+            bool showRank = (game.IsShowdown || isWinner) && !string.IsNullOrEmpty(player.HandRank);
+            _handRankText.text = showRank ? player.HandRank : "";
+            if (showRank)
+                _handRankText.color = isWinner ? Color.white : new Color(0.7f, 0.7f, 0.7f);
         }
 
         /// <summary>World position of the cards area (for deal animation targeting).</summary>
@@ -234,6 +298,12 @@ namespace HijackPoker.UI
         public void Clear()
         {
             if (_winnerPulseTween != null) { _winnerPulseTween.Kill(); _winnerPulseTween = null; }
+            if (_avatarRingImage != null)
+            {
+                DOTween.Kill(_avatarRingImage);
+                DOTween.Kill(_avatarRingImage.transform);
+                _avatarRingImage.transform.localScale = Vector3.one;
+            }
             _backgroundImage.color = NormalColor;
             _displayedStack = 0f;
             DOTween.Kill(_stackText);
@@ -249,6 +319,11 @@ namespace HijackPoker.UI
         {
             DOTween.Kill(_stackText);
             if (_winnerPulseTween != null) _winnerPulseTween.Kill();
+            if (_avatarRingImage != null)
+            {
+                DOTween.Kill(_avatarRingImage);
+                DOTween.Kill(_avatarRingImage.transform);
+            }
             HideCardPreview();
         }
 

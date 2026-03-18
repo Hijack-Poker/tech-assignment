@@ -124,6 +124,7 @@ async function saveGame(game) {
         community_cards = :communityCards,
         deck = :deck,
         current_bet = :currentBet,
+        last_raise_size = :lastRaiseSize,
         winners = :winners,
         pot = :pot,
         side_pots = :sidePots,
@@ -140,6 +141,7 @@ async function saveGame(game) {
           communityCards: JSON.stringify(game.communityCards || []),
           deck: JSON.stringify(game.deck || []),
           currentBet: game.currentBet || 0,
+          lastRaiseSize: game.lastRaiseSize || 0,
           winners: JSON.stringify(game.winners || []),
           pot: game.pot,
           sidePots: JSON.stringify(game.sidePots || []),
@@ -169,7 +171,9 @@ async function savePlayers(players) {
           status = :status,
           action = :action,
           cards = :cards,
+          best_hand = :bestHand,
           hand_rank = :handRank,
+          is_winner = :isWinner,
           winnings = :winnings
          WHERE id = :id`,
         {
@@ -181,7 +185,9 @@ async function savePlayers(players) {
             status: player.status,
             action: player.action,
             cards: JSON.stringify(player.cards || []),
+            bestHand: JSON.stringify(player.bestHand || []),
             handRank: player.handRank || '',
+            isWinner: player.isWinner ? 1 : 0,
             winnings: player.winnings || 0,
           },
           type: QueryTypes.UPDATE,
@@ -222,6 +228,7 @@ function normalizeGame(row) {
       ? JSON.parse(row.deck || '[]')
       : (row.deck || []),
     currentBet: parseFloat(row.current_bet) || 0,
+    lastRaiseSize: parseFloat(row.last_raise_size) || 0,
     winners: typeof row.winners === 'string'
       ? JSON.parse(row.winners || '[]')
       : (row.winners || []),
@@ -245,9 +252,32 @@ function normalizePlayer(row) {
     cards: typeof row.cards === 'string'
       ? JSON.parse(row.cards || '[]')
       : (row.cards || []),
+    bestHand: typeof row.best_hand === 'string'
+      ? JSON.parse(row.best_hand || '[]')
+      : (row.best_hand || []),
     handRank: row.hand_rank || '',
+    isWinner: row.is_winner === 1 || row.is_winner === '1',
     winnings: parseFloat(row.winnings) || 0,
   };
 }
 
-module.exports = { fetchTable, saveGame, savePlayers };
+/**
+ * Reset table — mark any in-progress game as completed and create a fresh one.
+ */
+async function resetTable(tableId) {
+  try {
+    // Mark all in-progress games for this table as completed
+    await sequelize.query(
+      `UPDATE games SET status = 'completed' WHERE table_id = :tableId AND status = 'in_progress'`,
+      { replacements: { tableId }, type: QueryTypes.UPDATE }
+    );
+
+    // Create a fresh game
+    return await createNewGame(tableId);
+  } catch (err) {
+    logger.error(`Failed to reset table ${tableId}: ${err.message}`);
+    throw err;
+  }
+}
+
+module.exports = { fetchTable, saveGame, savePlayers, resetTable };

@@ -1,7 +1,7 @@
 'use strict';
 
 const { processTable } = require('./lib/process-table');
-const { fetchTable } = require('./lib/table-fetcher');
+const { fetchTable, resetTable } = require('./lib/table-fetcher');
 const { logger } = require('./shared/config/logger');
 
 const CORS_HEADERS = {
@@ -124,12 +124,54 @@ async function getTableHttp(event) {
           action: p.action,
           cards: p.cards,
           handRank: p.handRank,
+          bestHand: p.bestHand || [],
+          isWinner: p.isWinner || false,
           winnings: p.winnings,
         })),
       }),
     };
   } catch (err) {
     logger.error(`GET table error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
+ * POST /table/{tableId}/reset — reset table to a fresh game.
+ */
+async function resetTableHttp(event) {
+  try {
+    const tableId = event.pathParameters?.tableId || JSON.parse(event.body || '{}').tableId;
+
+    if (!tableId) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId is required' }),
+      };
+    }
+
+    const table = await resetTable(tableId);
+
+    if (!table) {
+      return {
+        statusCode: 404,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Table not found' }),
+      };
+    }
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, gameNo: table.game.gameNo }),
+    };
+  } catch (err) {
+    logger.error(`Reset table error: ${err.message}`);
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
@@ -153,4 +195,4 @@ async function health() {
   };
 }
 
-module.exports = { handler, processHandHttp, getTableHttp, health };
+module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, health };

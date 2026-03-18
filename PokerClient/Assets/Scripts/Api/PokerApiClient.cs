@@ -56,6 +56,16 @@ namespace HijackPoker.Api
         }
 
         /// <summary>
+        /// Reset the table to start a fresh game.
+        /// POST /table/{tableId}/reset → ResetResponse
+        /// </summary>
+        public async Task<bool> ResetTableAsync(int tableId)
+        {
+            var result = await SendPostRequest<ResetResponse>($"/table/{tableId}/reset", new { });
+            return result != null && result.Success;
+        }
+
+        /// <summary>
         /// Check connection to the backend with retries.
         /// </summary>
         public async Task<bool> CheckConnectionAsync(int maxRetries = 3)

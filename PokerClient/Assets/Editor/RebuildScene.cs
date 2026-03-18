@@ -271,7 +271,7 @@ public static class RebuildScene
         var ebLbl = UI("Label", eb.transform);
         Stretch(ebLbl);
         var ebTxt = ebLbl.AddComponent<TextMeshProUGUI>();
-        ebTxt.text = "\u2715"; ebTxt.fontSize = 24; ebTxt.fontStyle = FontStyles.Bold;
+        ebTxt.text = "X"; ebTxt.fontSize = 24; ebTxt.fontStyle = FontStyles.Bold;
         ebTxt.alignment = TextAlignmentOptions.Center; ebTxt.color = Color.white;
         ebTxt.raycastTarget = false;
         var ebBtn = eb.GetComponent<Button>();

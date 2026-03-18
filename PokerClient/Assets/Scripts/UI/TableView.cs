@@ -44,6 +44,7 @@ namespace HijackPoker.UI
         [SerializeField] private AudioClip _foldSound;
         [SerializeField] private AudioClip _chipBetSound;
 
+        private AudioClip _crowdClapSound;
         private Sprite[] _allAvatars;
         private Dictionary<int, Sprite> _seatAvatars;
         private bool _avatarsAssigned;
@@ -109,7 +110,15 @@ namespace HijackPoker.UI
             SetLoadingVisible(true, immediate: true);
         }
 
-        private void OnEnable() => _stateManager.OnTableStateChanged += OnStateChanged;
+        private void OnEnable()
+        {
+            _stateManager.OnTableStateChanged += OnStateChanged;
+
+            // Ensure ShowdownView exists
+            if (GetComponent<ShowdownView>() == null)
+                gameObject.AddComponent<ShowdownView>();
+        }
+
         private void OnDisable() => _stateManager.OnTableStateChanged -= OnStateChanged;
 
         private void AssignAvatars(List<PlayerState> players, string localPlayerName)
@@ -790,6 +799,7 @@ namespace HijackPoker.UI
             // Always override with the dedicated chips.wav so inspector leftovers
             // or older runtime-loaded clips don't keep playing.
             StartCoroutine(LoadChipBetSoundFromProjectPath());
+            StartCoroutine(LoadCrowdClapSound());
         }
 
         private IEnumerator LoadDealShuffleSoundFromProjectPath()
@@ -829,6 +839,19 @@ namespace HijackPoker.UI
 
             if (request.result == UnityWebRequest.Result.Success)
                 _chipBetSound = DownloadHandlerAudioClip.GetContent(request);
+        }
+
+        private IEnumerator LoadCrowdClapSound()
+        {
+            string clipPath = Path.Combine(Application.dataPath, "uVegas/Audio/UI/crowd-clap.wav");
+            if (!File.Exists(clipPath))
+                yield break;
+
+            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+                _crowdClapSound = DownloadHandlerAudioClip.GetContent(request);
         }
 
         private void PlayTurnStartSound()
@@ -980,6 +1003,10 @@ namespace HijackPoker.UI
             }
 
             SpawnConfettiBurst(56);
+
+            // Play crowd clap sound
+            if (_sfxAudioSource != null && _crowdClapSound != null)
+                _sfxAudioSource.PlayOneShot(_crowdClapSound);
 
             _restartButtonDelayTween = DOVirtual.DelayedCall(RestartButtonDelaySeconds, () =>
             {

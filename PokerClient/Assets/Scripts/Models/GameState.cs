@@ -72,6 +72,9 @@ namespace HijackPoker.Models
         [JsonProperty("currentBet")]
         public float CurrentBet;
 
+        [JsonProperty("lastRaiseSize")]
+        public float LastRaiseSize;
+
         [JsonProperty("winners")]
         public List<Winner> Winners;
 
@@ -154,5 +157,18 @@ namespace HijackPoker.Models
 
         [JsonProperty("timestamp")]
         public string Timestamp;
+    }
+
+    /// <summary>
+    /// Response from POST /table/{tableId}/reset.
+    /// </summary>
+    [Serializable]
+    public class ResetResponse
+    {
+        [JsonProperty("success")]
+        public bool Success;
+
+        [JsonProperty("gameNo")]
+        public int GameNo;
     }
 }

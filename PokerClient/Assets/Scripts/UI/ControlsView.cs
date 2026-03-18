@@ -23,16 +23,25 @@ namespace HijackPoker.UI
         [SerializeField] private Button _raiseButton;
         [SerializeField] private TextMeshProUGUI _actionHintText;
 
+        // Bet panel (for when no current bet - shows 2X, 3X, custom input)
+        private GameObject _betOptionsPanel;
+        private Button _bet2xButton;
+        private Button _bet3xButton;
+        private TMP_InputField _betInputField;
+        private Button _betConfirmButton;
+
         private static readonly Color SelectedSpeedColor = new Color(0.17f, 0.55f, 0.92f);
         private static readonly Color DefaultSpeedColor = new Color(0.13f, 0.20f, 0.28f);
         private static readonly Color AutoPlayActiveColor = new Color(0.86f, 0.36f, 0.35f);
         private static readonly Color AutoPlayIdleColor = new Color(0.12f, 0.49f, 0.86f);
+        private static readonly Color BetOptionColor = new Color(0.75f, 0.48f, 0.14f);
 
         private int _selectedSpeedIndex = 2;
         private float _currentToCall;
         private float _currentMinRaise;
         private bool _canActNow;
         private bool _canRaiseNow;
+        private float _bigBlind;
 
         private void Awake()
         {
@@ -88,7 +97,13 @@ namespace HijackPoker.UI
                 _actionPanel.SetActive(inBettingStep);
             if (_foldButton != null) _foldButton.interactable = _canActNow;
             if (_callButton != null) _callButton.interactable = _canActNow;
+
+            // Show bet options (2X, 3X, input) when no current bet, otherwise show raise button
+            bool isBetSituation = _currentToCall <= 0f && _canRaiseNow;
+            if (_betOptionsPanel != null) _betOptionsPanel.SetActive(inBettingStep && isBetSituation && _canActNow);
+            if (_raiseButton != null) _raiseButton.gameObject.SetActive(!isBetSituation);
             if (_raiseButton != null) _raiseButton.interactable = _canActNow && _canRaiseNow;
+
             SetActionButtonLabels();
             if (_actionHintText != null)
             {
@@ -155,6 +170,32 @@ namespace HijackPoker.UI
                 _ = _gameManager.AdvanceStepAsync("raise", amount);
         }
 
+        private void OnBet2xClicked()
+        {
+            if (!_canActNow || !_canRaiseNow) return;
+            float amount = _bigBlind * 2f;
+            _ = _gameManager.AdvanceStepAsync("bet", amount);
+        }
+
+        private void OnBet3xClicked()
+        {
+            if (!_canActNow || !_canRaiseNow) return;
+            float amount = _bigBlind * 3f;
+            _ = _gameManager.AdvanceStepAsync("bet", amount);
+        }
+
+        private void OnBetConfirmClicked()
+        {
+            if (!_canActNow || !_canRaiseNow) return;
+            if (_betInputField == null) return;
+
+            if (float.TryParse(_betInputField.text, out float amount) && amount >= _bigBlind)
+            {
+                _ = _gameManager.AdvanceStepAsync("bet", amount);
+                _betInputField.text = "";
+            }
+        }
+
         private static bool IsBettingStep(int step)
         {
             return step == 5 || step == 7 || step == 9 || step == 11;
@@ -194,9 +235,13 @@ namespace HijackPoker.UI
                 return;
 
             _canActNow = true;
+            _bigBlind = state.Game.BigBlind;
             _currentToCall = Mathf.Max(0f, state.Game.CurrentBet - actor.Bet);
-            float minRaiseUnit = Mathf.Max(state.Game.BigBlind, 1f);
-            _currentMinRaise = _currentToCall + minRaiseUnit;
+            // Min raise = 2x current bet (must at least double)
+            float minRaiseTo = state.Game.CurrentBet * 2f;
+            // But at least currentBet + bigBlind
+            minRaiseTo = Mathf.Max(minRaiseTo, state.Game.CurrentBet + state.Game.BigBlind);
+            _currentMinRaise = minRaiseTo;
             _canRaiseNow = actor.Stack > _currentToCall + 0.01f;
         }
 
@@ -250,14 +295,76 @@ namespace HijackPoker.UI
 
             _foldButton = CreateActionButton(panel.transform, "FoldBtn", "FOLD", new Color(0.45f, 0.20f, 0.22f));
             _callButton = CreateActionButton(panel.transform, "CallBtn", "CALL", new Color(0.13f, 0.45f, 0.72f));
-            _raiseButton = CreateActionButton(panel.transform, "RaiseBtn", "RAISE", new Color(0.75f, 0.48f, 0.14f));
+            _raiseButton = CreateActionButton(panel.transform, "RaiseBtn", "RAISE", BetOptionColor);
+
+            // Create bet options panel (2X, 3X, input, confirm)
+            _betOptionsPanel = new GameObject("BetOptionsPanel", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            _betOptionsPanel.transform.SetParent(panel.transform, false);
+            var betH = _betOptionsPanel.GetComponent<HorizontalLayoutGroup>();
+            betH.spacing = 6;
+            betH.childAlignment = TextAnchor.MiddleCenter;
+            betH.childForceExpandHeight = true;
+            betH.childForceExpandWidth = false;
+            var betLe = _betOptionsPanel.AddComponent<LayoutElement>();
+            betLe.preferredWidth = 280f;
+
+            _bet2xButton = CreateActionButton(_betOptionsPanel.transform, "Bet2x", "2X", BetOptionColor, 60f);
+            _bet2xButton.onClick.AddListener(OnBet2xClicked);
+
+            _bet3xButton = CreateActionButton(_betOptionsPanel.transform, "Bet3x", "3X", BetOptionColor, 60f);
+            _bet3xButton.onClick.AddListener(OnBet3xClicked);
+
+            // Input field
+            var inputGO = new GameObject("BetInput", typeof(RectTransform), typeof(Image), typeof(TMP_InputField), typeof(LayoutElement));
+            inputGO.transform.SetParent(_betOptionsPanel.transform, false);
+            var inputImg = inputGO.GetComponent<Image>();
+            inputImg.color = new Color(0.15f, 0.20f, 0.28f);
+            var inputLe = inputGO.GetComponent<LayoutElement>();
+            inputLe.preferredWidth = 80f;
+            inputLe.preferredHeight = 36f;
+
+            var inputTextGO = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            inputTextGO.transform.SetParent(inputGO.transform, false);
+            var inputTextRt = inputTextGO.GetComponent<RectTransform>();
+            inputTextRt.anchorMin = Vector2.zero;
+            inputTextRt.anchorMax = Vector2.one;
+            inputTextRt.offsetMin = new Vector2(8, 4);
+            inputTextRt.offsetMax = new Vector2(-8, -4);
+            var inputText = inputTextGO.GetComponent<TextMeshProUGUI>();
+            inputText.fontSize = 16;
+            inputText.alignment = TextAlignmentOptions.Center;
+            inputText.color = Color.white;
+
+            var placeholderGO = new GameObject("Placeholder", typeof(RectTransform), typeof(TextMeshProUGUI));
+            placeholderGO.transform.SetParent(inputGO.transform, false);
+            var phRt = placeholderGO.GetComponent<RectTransform>();
+            phRt.anchorMin = Vector2.zero;
+            phRt.anchorMax = Vector2.one;
+            phRt.offsetMin = new Vector2(8, 4);
+            phRt.offsetMax = new Vector2(-8, -4);
+            var phText = placeholderGO.GetComponent<TextMeshProUGUI>();
+            phText.text = "$";
+            phText.fontSize = 16;
+            phText.alignment = TextAlignmentOptions.Center;
+            phText.color = new Color(0.5f, 0.5f, 0.5f);
+
+            _betInputField = inputGO.GetComponent<TMP_InputField>();
+            _betInputField.textComponent = inputText;
+            _betInputField.placeholder = phText;
+            _betInputField.contentType = TMP_InputField.ContentType.DecimalNumber;
+            _betInputField.textViewport = inputTextRt;
+
+            _betConfirmButton = CreateActionButton(_betOptionsPanel.transform, "BetConfirm", "BET", new Color(0.18f, 0.55f, 0.22f), 60f);
+            _betConfirmButton.onClick.AddListener(OnBetConfirmClicked);
+
+            _betOptionsPanel.SetActive(false);
 
             var hintGO = new GameObject("ActionHint", typeof(RectTransform), typeof(TextMeshProUGUI));
             hintGO.transform.SetParent(panel.transform, false);
             var hintRt = hintGO.GetComponent<RectTransform>();
-            hintRt.sizeDelta = new Vector2(220f, 40f);
+            hintRt.sizeDelta = new Vector2(180f, 40f);
             _actionHintText = hintGO.GetComponent<TextMeshProUGUI>();
-            _actionHintText.fontSize = 16;
+            _actionHintText.fontSize = 14;
             _actionHintText.alignment = TextAlignmentOptions.Center;
             _actionHintText.color = new Color(0.86f, 0.92f, 1f);
             _actionHintText.text = "";
@@ -266,14 +373,14 @@ namespace HijackPoker.UI
             _actionPanel.SetActive(false);
         }
 
-        private static Button CreateActionButton(Transform parent, string name, string label, Color color)
+        private static Button CreateActionButton(Transform parent, string name, string label, Color color, float width = 92f)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
             var img = go.GetComponent<Image>();
             img.color = color;
             var le = go.GetComponent<LayoutElement>();
-            le.preferredWidth = 92f;
+            le.preferredWidth = width;
             le.preferredHeight = 40f;
 
             var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));

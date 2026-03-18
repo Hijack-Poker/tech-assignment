@@ -59,6 +59,19 @@ namespace HijackPoker.Models
         public string HandRank;
 
         /// <summary>
+        /// Best 5-card hand at showdown, e.g. ["AH", "AD", "AS", "KH", "KD"].
+        /// Empty before showdown.
+        /// </summary>
+        [JsonProperty("bestHand")]
+        public List<string> BestHand;
+
+        /// <summary>
+        /// True if this player won the hand (set by backend at showdown).
+        /// </summary>
+        [JsonProperty("isWinner")]
+        public bool IsWinnerFlag;
+
+        /// <summary>
         /// Amount won this hand. 0 if not a winner.
         /// </summary>
         [JsonProperty("winnings")]
@@ -69,8 +82,9 @@ namespace HijackPoker.Models
         public bool IsActive => Status == PlayerStatusCode.Active;
         public bool IsFolded => Status == PlayerStatusCode.Folded;
         public bool IsAllIn => Status == PlayerStatusCode.AllIn;
-        public bool IsWinner => Winnings > 0;
+        public bool IsWinner => IsWinnerFlag || Winnings > 0;
         public bool HasCards => Cards != null && Cards.Count > 0;
+        public bool HasBestHand => BestHand != null && BestHand.Count > 0;
     }
 
     /// <summary>

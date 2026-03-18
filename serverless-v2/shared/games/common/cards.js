@@ -84,7 +84,34 @@ function findWinners(hands) {
       descr: s.solved.descr,
       rank: s.solved.rank,
       name: s.solved.name,
+      bestHand: s.solved.cards.map((c) => c.toString().toUpperCase()),
     }));
+}
+
+/**
+ * Evaluate all hands and return info for each player including best 5 cards.
+ * Returns array of { playerId, seat, descr, rank, name, bestHand, isWinner }.
+ */
+function evaluateAllHands(hands) {
+  if (!hands.length) return [];
+
+  const solved = hands.map((h) => ({
+    ...h,
+    solved: Hand.solve(h.cards.map(toPokersolver)),
+  }));
+
+  const winners = Hand.winners(solved.map((s) => s.solved));
+  const winnerSet = new Set(winners);
+
+  return solved.map((s) => ({
+    playerId: s.playerId,
+    seat: s.seat,
+    descr: s.solved.descr,
+    rank: s.solved.rank,
+    name: s.solved.name,
+    bestHand: s.solved.cards.map((c) => c.toString().toUpperCase()),
+    isWinner: winnerSet.has(s.solved),
+  }));
 }
 
 /**
@@ -102,6 +129,7 @@ module.exports = {
   shuffle,
   deal,
   evaluateHand,
+  evaluateAllHands,
   findWinners,
   getBestHand,
   toPokersolver,

@@ -40,7 +40,10 @@ namespace HijackPoker.Managers
 
             if (connected)
             {
-                // Advance until we reach blind posting for a fresh hand (step 2),
+                // Reset to a fresh game
+                await _apiClient.ResetTableAsync(_tableId);
+
+                // Advance until we reach blind posting (step 2),
                 // so startup skips the two setup-only phases.
                 HijackPoker.Models.TableResponse lastState = null;
                 for (int i = 0; i < 30; i++)
