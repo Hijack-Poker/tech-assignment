@@ -183,15 +183,11 @@ namespace HijackPoker.UI
                     bool betIncreased = player.Bet > prevBet && player.Bet > 0;
                     if (!betIncreased) continue;
 
-                    // Blind-post transitions:
-                    // 2 -> 3 means SB was just posted, 3 -> 4 means BB was just posted.
-                    bool isBlindTransition = _prevHandStep == 2 || _prevHandStep == 3;
-                    if (isBlindTransition)
-                    {
-                        bool isExpectedBlindPayer = (_prevHandStep == 2 && player.Seat == sbSeat) ||
-                                                    (_prevHandStep == 3 && player.Seat == bbSeat);
-                        if (!isExpectedBlindPayer) continue;
-                    }
+                    // During blind posting steps, only animate the blind poster.
+                    // After processing step 2 (SB), state arrives as step 3 with SB set.
+                    // After processing step 3 (BB), state arrives as step 4 with BB set.
+                    if (step == 3 && state.Game.BigBlindSeat == 0 && player.Seat != state.Game.SmallBlindSeat) continue;
+                    if (step == 4 && player.Seat != state.Game.BigBlindSeat) continue;
 
                     int idx = SeatToViewIndex(player.Seat);
                     if (idx >= 0 && idx < _seatViews.Length)
@@ -201,8 +197,12 @@ namespace HijackPoker.UI
                 }
             }
 
-            // ── 2. CENTER POT UPDATE ──
-            UpdateCenterPot(state.Game.Pot);
+            // ── 2. CENTER POT UPDATE (pot + all outstanding bets = live total) ──
+            float livePot = state.Game.Pot;
+            if (state.Players != null)
+                foreach (var p in state.Players)
+                    livePot += p.Bet;
+            UpdateCenterPot(livePot);
 
             // ── 3. DETECT CARD DEALING ──
             // Trigger exactly once per hand once cards exist and we are at/after deal step.
@@ -291,10 +291,12 @@ namespace HijackPoker.UI
                 .OrderBy(s => s)
                 .ToList();
 
-            // Keep badges stable inside one hand to avoid visible switching
-            // while backend states are still warming up in first steps.
+            // Keep badges stable once the API has provided actual SB/BB seats
+            // (step >= 3 means both blinds have been posted).
+            bool apiHasBlinds = state.Game.SmallBlindSeat > 0 && state.Game.BigBlindSeat > 0;
             if (!newHand && _badgeGameNo == state.Game.GameNo &&
-                _badgeDealerSeat > 0 && _badgeSmallBlindSeat > 0 && _badgeBigBlindSeat > 0)
+                _badgeDealerSeat > 0 && _badgeSmallBlindSeat > 0 && _badgeBigBlindSeat > 0 &&
+                apiHasBlinds)
             {
                 dealerSeat = _badgeDealerSeat;
                 sbSeat = _badgeSmallBlindSeat;

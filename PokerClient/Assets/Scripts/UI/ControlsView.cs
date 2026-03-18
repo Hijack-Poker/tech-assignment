@@ -21,6 +21,7 @@ namespace HijackPoker.UI
         [SerializeField] private Button _foldButton;
         [SerializeField] private Button _callButton;
         [SerializeField] private Button _raiseButton;
+        [SerializeField] private Button _allInButton;
         [SerializeField] private TextMeshProUGUI _actionHintText;
 
         // Bet panel (for when no current bet - shows 2X, 3X, custom input)
@@ -41,6 +42,8 @@ namespace HijackPoker.UI
         private float _currentMinRaise;
         private bool _canActNow;
         private bool _canRaiseNow;
+        private bool _isCallAllIn;
+        private float _actorStack;
         private float _bigBlind;
 
         private void Awake()
@@ -52,6 +55,7 @@ namespace HijackPoker.UI
             if (_foldButton != null) _foldButton.onClick.AddListener(OnFoldClicked);
             if (_callButton != null) _callButton.onClick.AddListener(OnCallClicked);
             if (_raiseButton != null) _raiseButton.onClick.AddListener(OnRaiseClicked);
+            if (_allInButton != null) _allInButton.onClick.AddListener(OnAllInClicked);
 
             for (int i = 0; i < _speedButtons.Length; i++)
             {
@@ -103,6 +107,11 @@ namespace HijackPoker.UI
             if (_betOptionsPanel != null) _betOptionsPanel.SetActive(inBettingStep && isBetSituation && _canActNow);
             if (_raiseButton != null) _raiseButton.gameObject.SetActive(!isBetSituation);
             if (_raiseButton != null) _raiseButton.interactable = _canActNow && _canRaiseNow;
+            if (_allInButton != null)
+            {
+                _allInButton.gameObject.SetActive(inBettingStep);
+                _allInButton.interactable = _canActNow && _actorStack > 0;
+            }
 
             SetActionButtonLabels();
             if (_actionHintText != null)
@@ -148,6 +157,8 @@ namespace HijackPoker.UI
 
             if (_currentToCall <= 0f)
                 _ = _gameManager.AdvanceStepAsync("check", 0f);
+            else if (_isCallAllIn)
+                _ = _gameManager.AdvanceStepAsync("allin", _actorStack);
             else
                 _ = _gameManager.AdvanceStepAsync("call", _currentToCall);
         }
@@ -168,6 +179,12 @@ namespace HijackPoker.UI
                 _ = _gameManager.AdvanceStepAsync("bet", amount);
             else
                 _ = _gameManager.AdvanceStepAsync("raise", amount);
+        }
+
+        private void OnAllInClicked()
+        {
+            if (!_canActNow) return;
+            _ = _gameManager.AdvanceStepAsync("allin", _actorStack);
         }
 
         private void OnBet2xClicked()
@@ -225,6 +242,8 @@ namespace HijackPoker.UI
             _currentToCall = 0f;
             _currentMinRaise = 0f;
             _canRaiseNow = false;
+            _isCallAllIn = false;
+            _actorStack = 0f;
 
             if (!inBettingStep || !driverCanAct || state?.Game == null)
                 return;
@@ -235,8 +254,11 @@ namespace HijackPoker.UI
                 return;
 
             _canActNow = true;
+            _actorStack = actor.Stack;
             _bigBlind = state.Game.BigBlind;
             _currentToCall = Mathf.Max(0f, state.Game.CurrentBet - actor.Bet);
+            // If calling would use entire stack, it's an all-in call
+            _isCallAllIn = _currentToCall >= actor.Stack && actor.Stack > 0;
             // Min raise = 2x current bet (must at least double)
             float minRaiseTo = state.Game.CurrentBet * 2f;
             // But at least currentBet + bigBlind
@@ -251,6 +273,8 @@ namespace HijackPoker.UI
 
             if (_currentToCall <= 0f)
                 SetButtonLabel(_callButton, "CHECK");
+            else if (_isCallAllIn)
+                SetButtonLabel(_callButton, $"ALL IN {_actorStack:0.#}");
             else
                 SetButtonLabel(_callButton, $"CALL {_currentToCall:0.#}");
 
@@ -258,6 +282,9 @@ namespace HijackPoker.UI
                 SetButtonLabel(_raiseButton, $"BET {Mathf.Max(_currentMinRaise, 1f):0.#}");
             else
                 SetButtonLabel(_raiseButton, $"RAISE {Mathf.Max(_currentMinRaise, 1f):0.#}");
+
+            if (_allInButton != null)
+                SetButtonLabel(_allInButton, $"ALL IN\n{_actorStack:0.#}");
         }
 
         private static void SetButtonLabel(Button button, string text)
@@ -296,6 +323,8 @@ namespace HijackPoker.UI
             _foldButton = CreateActionButton(panel.transform, "FoldBtn", "FOLD", new Color(0.45f, 0.20f, 0.22f));
             _callButton = CreateActionButton(panel.transform, "CallBtn", "CALL", new Color(0.13f, 0.45f, 0.72f));
             _raiseButton = CreateActionButton(panel.transform, "RaiseBtn", "RAISE", BetOptionColor);
+            _allInButton = CreateActionButton(panel.transform, "AllInBtn", "ALL IN", new Color(0.85f, 0.25f, 0.25f));
+            _allInButton.onClick.AddListener(OnAllInClicked);
 
             // Create bet options panel (2X, 3X, input, confirm)
             _betOptionsPanel = new GameObject("BetOptionsPanel", typeof(RectTransform), typeof(HorizontalLayoutGroup));

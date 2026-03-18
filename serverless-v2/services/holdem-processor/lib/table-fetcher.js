@@ -47,7 +47,9 @@ async function fetchTable(tableId) {
 }
 
 /**
- * Create a new game for a table with the seeded players.
+ * Create a new game for a table.
+ * Carries over stacks from the last completed game; busts players with $0.
+ * Falls back to fresh buy-ins if no previous game exists.
  */
 async function createNewGame(tableId) {
   try {
@@ -59,14 +61,62 @@ async function createNewGame(tableId) {
     if (!table) return null;
 
     const maxSeats = parseInt(table.max_seats, 10) || 6;
+    const minBuy = parseFloat(table.min_buy_in);
+    const maxBuy = parseFloat(table.max_buy_in);
 
-    // Get players (for skeleton, use the seeded players)
-    const allPlayers = await sequelize.query(
-      `SELECT * FROM players ORDER BY id LIMIT ${maxSeats}`,
-      { type: QueryTypes.SELECT }
+    // Try to carry over from the last completed game
+    const prevPlayers = await sequelize.query(
+      `SELECT gp.player_id, gp.seat, gp.stack, p.guid, p.username
+       FROM game_players gp
+       JOIN players p ON gp.player_id = p.id
+       JOIN games g ON gp.game_id = g.id
+       WHERE g.table_id = :tableId AND g.status = 'completed'
+       ORDER BY g.game_no DESC, gp.seat`,
+      { replacements: { tableId }, type: QueryTypes.SELECT }
     );
 
-    if (allPlayers.length < 2) return null;
+    // Group by game (take only the most recent completed game's players)
+    let carryOverPlayers = null;
+    if (prevPlayers.length > 0) {
+      // All rows from the query are from the latest completed game (ORDER BY game_no DESC)
+      // but we need to de-dup by seat in case of multiple completed games
+      const seen = new Set();
+      carryOverPlayers = [];
+      for (const p of prevPlayers) {
+        if (!seen.has(p.seat)) {
+          seen.add(p.seat);
+          carryOverPlayers.push(p);
+        }
+      }
+      // Filter out busted players (stack <= 0)
+      carryOverPlayers = carryOverPlayers.filter(p => parseFloat(p.stack) > 0);
+    }
+
+    // Fall back to fresh buy-ins if no previous game or not enough players
+    if (!carryOverPlayers || carryOverPlayers.length < 2) {
+      const allPlayers = await sequelize.query(
+        `SELECT * FROM players ORDER BY id LIMIT ${maxSeats}`,
+        { type: QueryTypes.SELECT }
+      );
+
+      if (allPlayers.length < 2) return null;
+
+      carryOverPlayers = allPlayers.map((p, i) => {
+        const stackOptions = [
+          maxBuy,
+          Math.round((minBuy + maxBuy) * 0.35),
+          Math.round((minBuy + maxBuy) * 0.75),
+          minBuy,
+          Math.round((minBuy + maxBuy) * 0.6),
+          Math.round((minBuy + maxBuy) * 0.5),
+        ];
+        return {
+          player_id: p.id,
+          seat: i + 1,
+          stack: stackOptions[i] || Math.round((minBuy + maxBuy) / 2),
+        };
+      });
+    }
 
     // Get next game number
     const [lastGame] = await sequelize.query(
@@ -75,17 +125,22 @@ async function createNewGame(tableId) {
     );
     const nextGameNo = lastGame?.next_no || 1;
 
+    // Get dealer seat from last completed game to carry over rotation
+    const [lastCompleted] = await sequelize.query(
+      `SELECT dealer_seat FROM games WHERE table_id = :tableId AND status = 'completed' ORDER BY game_no DESC LIMIT 1`,
+      { replacements: { tableId }, type: QueryTypes.SELECT }
+    );
+    const dealerSeat = lastCompleted ? lastCompleted.dealer_seat : 1;
+
     // Insert game record
     const [gameId] = await sequelize.query(
       `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
-       VALUES (:tableId, :gameNo, 0, 1, 0, 'in_progress')`,
-      { replacements: { tableId, gameNo: nextGameNo }, type: QueryTypes.INSERT }
+       VALUES (:tableId, :gameNo, 0, :dealerSeat, 0, 'in_progress')`,
+      { replacements: { tableId, gameNo: nextGameNo, dealerSeat }, type: QueryTypes.INSERT }
     );
 
-    // Insert game players
-    for (let i = 0; i < allPlayers.length; i++) {
-      const player = allPlayers[i];
-      const buyIn = (parseFloat(table.min_buy_in) + parseFloat(table.max_buy_in)) / 2;
+    // Insert players with carried-over stacks
+    for (const p of carryOverPlayers) {
       await sequelize.query(
         `INSERT INTO game_players (game_id, table_id, player_id, seat, stack, status)
          VALUES (:gameId, :tableId, :playerId, :seat, :stack, '1')`,
@@ -93,9 +148,9 @@ async function createNewGame(tableId) {
           replacements: {
             gameId,
             tableId,
-            playerId: player.id,
-            seat: i + 1,
-            stack: buyIn,
+            playerId: p.player_id,
+            seat: p.seat,
+            stack: parseFloat(p.stack),
           },
           type: QueryTypes.INSERT,
         }

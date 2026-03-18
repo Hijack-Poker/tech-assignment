@@ -15,6 +15,11 @@ namespace HijackPoker.UI
         private readonly List<string> _lines = new List<string>();
         private const int MaxLines = 30;
 
+        // Track last known action per seat to only log new actions
+        private readonly Dictionary<int, string> _lastActions = new();
+        private int _lastGameNo = -1;
+        private int _lastHandStep = -1;
+
         private void OnEnable()
         {
             if (_stateManager == null) return;
@@ -30,31 +35,53 @@ namespace HijackPoker.UI
         private void OnStateChanged(TableResponse state)
         {
             var game = state.Game;
-            string label = _stateManager.GetStepLabel(game.HandStep);
 
-            AddLine($"Hand #{game.GameNo} — {label}");
+            // Reset action tracking on new hand
+            if (game.GameNo != _lastGameNo)
+            {
+                _lastActions.Clear();
+                _lastGameNo = game.GameNo;
+            }
+
+            // Only show step header when the step changes
+            if (game.HandStep != _lastHandStep)
+            {
+                string label = _stateManager.GetStepLabel(game.HandStep);
+                AddLine($"Hand #{game.GameNo} — {label}");
+
+                // Reset actions when entering a new betting round
+                if (IsBettingStep(game.HandStep) && !IsBettingStep(_lastHandStep))
+                    _lastActions.Clear();
+            }
 
             // Show blind posts
-            if (game.HandStep == 2) // Posting Small Blind
+            if (game.HandStep == 2 && _lastHandStep != 2)
             {
                 var sbPlayer = GetPlayerBySeat(state.Players, game.SmallBlindSeat);
                 if (sbPlayer != null)
                     AddLine($"  {ColoredName(sbPlayer)} posts SB {MoneyFormatter.Format(game.SmallBlind)}");
             }
-            else if (game.HandStep == 3) // Posting Big Blind
+            else if (game.HandStep == 3 && _lastHandStep != 3)
             {
                 var bbPlayer = GetPlayerBySeat(state.Players, game.BigBlindSeat);
                 if (bbPlayer != null)
                     AddLine($"  {ColoredName(bbPlayer)} posts BB {MoneyFormatter.Format(game.BigBlind)}");
             }
 
-            // Show player actions during betting rounds
+            // Show only NEW player actions during betting rounds
             if (IsBettingStep(game.HandStep) && state.Players != null)
             {
                 foreach (var p in state.Players)
                 {
-                    if (!string.IsNullOrEmpty(p.Action))
+                    if (string.IsNullOrEmpty(p.Action)) continue;
+
+                    // Build a key: seat + action + bet amount to detect changes
+                    string actionKey = $"{p.Action}_{p.Bet}_{p.TotalBet}";
+                    _lastActions.TryGetValue(p.Seat, out string prevKey);
+
+                    if (actionKey != prevKey)
                     {
+                        _lastActions[p.Seat] = actionKey;
                         string actionText = FormatAction(p);
                         if (!string.IsNullOrEmpty(actionText))
                             AddLine($"  {actionText}");
@@ -63,7 +90,7 @@ namespace HijackPoker.UI
             }
 
             // Show winners
-            if (game.HandStep == 14 && state.Players != null)
+            if (game.HandStep == 14 && _lastHandStep != 14 && state.Players != null)
             {
                 foreach (var p in state.Players)
                 {
@@ -72,9 +99,10 @@ namespace HijackPoker.UI
                 }
             }
 
-            if (game.HandStep == 15)
+            if (game.HandStep == 15 && _lastHandStep != 15)
                 AddLine("────────────────");
 
+            _lastHandStep = game.HandStep;
             UpdateDisplay();
         }
 
