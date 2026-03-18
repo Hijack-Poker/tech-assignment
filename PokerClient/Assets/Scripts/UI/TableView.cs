@@ -936,9 +936,30 @@ namespace HijackPoker.UI
             _restartButtonDelayTween?.Kill();
 
             var primaryWinner = winners[0];
-            _winnerBannerText.text = winners.Count == 1
-                ? $"WINNER: {primaryWinner.Username?.ToUpper() ?? "PLAYER"}"
-                : $"SPLIT POT: {winners.Count} WINNERS";
+            string handRank = !string.IsNullOrEmpty(primaryWinner.HandRank) ? primaryWinner.HandRank : "";
+            string winAmount = primaryWinner.Winnings > 0 ? $"  {MoneyFormatter.FormatGain(primaryWinner.Winnings)}" : "";
+
+            if (winners.Count == 1)
+            {
+                string line1 = $"WINNER: {primaryWinner.Username?.ToUpper() ?? "PLAYER"}";
+                string line2 = "";
+                if (!string.IsNullOrEmpty(handRank))
+                    line2 += handRank;
+                if (!string.IsNullOrEmpty(winAmount))
+                    line2 += (line2.Length > 0 ? "  |  " : "") + $"<color=#4AE86C>{winAmount.Trim()}</color>";
+                _winnerBannerText.text = string.IsNullOrEmpty(line2) ? line1 : $"{line1}\n<size=22>{line2}</size>";
+            }
+            else
+            {
+                var lines = new List<string> { $"SPLIT POT: {winners.Count} WINNERS" };
+                foreach (var w in winners)
+                {
+                    string wRank = !string.IsNullOrEmpty(w.HandRank) ? $" ({w.HandRank})" : "";
+                    string wAmount = w.Winnings > 0 ? $" <color=#4AE86C>{MoneyFormatter.FormatGain(w.Winnings)}</color>" : "";
+                    lines.Add($"<size=20>{w.Username}{wRank}{wAmount}</size>");
+                }
+                _winnerBannerText.text = string.Join("\n", lines);
+            }
             SetWinnerCards(primaryWinner);
 
             if (_seatAvatars.TryGetValue(primaryWinner.Seat, out var avatar) && avatar != null)
@@ -1101,7 +1122,7 @@ namespace HijackPoker.UI
             plateRT.anchorMax = new Vector2(0.5f, 0.5f);
             plateRT.pivot = new Vector2(0.5f, 0.5f);
             plateRT.anchoredPosition = new Vector2(0f, -80f);
-            plateRT.sizeDelta = new Vector2(520f, 72f);
+            plateRT.sizeDelta = new Vector2(520f, 100f);
             _winnerBannerPlate = bannerPlateGO.GetComponent<Image>();
             _winnerBannerPlate.color = new Color(0.09f, 0.16f, 0.25f, 0f);
             _winnerBannerPlate.raycastTarget = false;
@@ -1125,7 +1146,7 @@ namespace HijackPoker.UI
             textRT.anchorMax = new Vector2(0.5f, 0.5f);
             textRT.pivot = new Vector2(0.5f, 0.5f);
             textRT.anchoredPosition = Vector2.zero;
-            textRT.sizeDelta = new Vector2(480f, 60f);
+            textRT.sizeDelta = new Vector2(480f, 90f);
             _winnerBannerText = textGO.GetComponent<TextMeshProUGUI>();
             _winnerBannerText.alignment = TextAlignmentOptions.Center;
             _winnerBannerText.fontSize = 34;
@@ -1192,7 +1213,7 @@ namespace HijackPoker.UI
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(0f, -145f);
+            rt.anchoredPosition = new Vector2(0f, -160f);
             rt.sizeDelta = new Vector2(220f, 52f);
 
             var img = buttonGO.GetComponent<Image>();
@@ -1207,7 +1228,7 @@ namespace HijackPoker.UI
             labelRt.offsetMax = Vector2.zero;
 
             var label = labelGO.GetComponent<TextMeshProUGUI>();
-            label.text = "RESTART HAND";
+            label.text = "NEXT HAND";
             label.alignment = TextAlignmentOptions.Center;
             label.fontSize = 22;
             label.fontStyle = FontStyles.Bold;

@@ -23,6 +23,8 @@ namespace HijackPoker.UI
         private List<GameObject> _displayedCards = new List<GameObject>();
         private bool _isShowingShowdown;
         private int _lastShownPlayerCount;
+        private Button _nextHandButton;
+        private GameManager _gameManager;
 
         private static readonly Color WinnerGlow = new Color(1f, 0.84f, 0.2f, 1f);
 
@@ -33,7 +35,7 @@ namespace HijackPoker.UI
         private const float LabelH = 22f;
         private const float RowGap = 6f;
         private const float Pad = 12f;
-        private const float TitleH = 44f;
+        private const float TitleH = 58f;
 
         private float RowH => CardH + LabelH + 2f;
 
@@ -41,6 +43,8 @@ namespace HijackPoker.UI
         {
             if (_stateManager == null)
                 _stateManager = FindObjectOfType<TableStateManager>();
+            if (_gameManager == null)
+                _gameManager = FindObjectOfType<GameManager>();
 
             if (_seatViews == null || _seatViews.Length == 0)
             {
@@ -125,15 +129,25 @@ namespace HijackPoker.UI
             var winner = players.FirstOrDefault(p => p.IsWinner);
             if (_winnerText != null)
             {
-                _winnerText.text = winner != null
-                    ? $"{winner.Username} wins with {(!string.IsNullOrEmpty(winner.HandRank) ? winner.HandRank : "Best Hand")}!"
-                    : "Showdown";
+                if (winner != null)
+                {
+                    string rank = !string.IsNullOrEmpty(winner.HandRank) ? winner.HandRank : "Best Hand";
+                    string winText = winner.Winnings > 0
+                        ? $"\n<size=18><color=#4AE86C>+${winner.Winnings:F2}</color></size>"
+                        : "";
+                    _winnerText.text = $"{winner.Username} wins with {rank}!{winText}";
+                }
+                else
+                {
+                    _winnerText.text = "Showdown";
+                }
             }
 
             BuildPlayerRows(players);
 
-            // Size the panel to fit all rows
-            float contentH = TitleH + players.Count * (RowH + RowGap) + Pad;
+            // Size the panel to fit all rows + next hand button
+            float buttonH = 56f;
+            float contentH = TitleH + players.Count * (RowH + RowGap) + buttonH + Pad;
             var panelRT = _showdownPanel.GetComponent<RectTransform>();
             panelRT.sizeDelta = new Vector2(460f, contentH);
 
@@ -339,25 +353,64 @@ namespace HijackPoker.UI
             trt.anchorMin = new Vector2(0, 1);
             trt.anchorMax = new Vector2(1, 1);
             trt.pivot = new Vector2(0.5f, 1f);
-            trt.anchoredPosition = new Vector2(0, -6f);
-            trt.sizeDelta = new Vector2(-20f, TitleH - 8f);
+            trt.anchoredPosition = new Vector2(0, -4f);
+            trt.sizeDelta = new Vector2(-20f, TitleH - 4f);
 
             _winnerText = tgo.GetComponent<TextMeshProUGUI>();
-            _winnerText.fontSize = 22;
+            _winnerText.fontSize = 20;
             _winnerText.fontStyle = FontStyles.Bold;
             _winnerText.alignment = TextAlignmentOptions.Center;
             _winnerText.color = WinnerGlow;
 
-            // Content root (below title)
+            // Content root (below title, above button)
             var cgo = new GameObject("Content", typeof(RectTransform));
             cgo.transform.SetParent(_showdownPanel.transform, false);
             _contentRoot = cgo.GetComponent<RectTransform>();
             _contentRoot.anchorMin = new Vector2(0, 0);
             _contentRoot.anchorMax = new Vector2(1, 1);
-            _contentRoot.offsetMin = new Vector2(Pad, Pad);
+            _contentRoot.offsetMin = new Vector2(Pad, Pad + 52f);
             _contentRoot.offsetMax = new Vector2(-Pad, -TitleH);
 
+            // NEXT HAND button at bottom
+            var btnGO = new GameObject("NextHandButton", typeof(RectTransform), typeof(Image), typeof(Button));
+            btnGO.transform.SetParent(_showdownPanel.transform, false);
+            var btnRT = btnGO.GetComponent<RectTransform>();
+            btnRT.anchorMin = new Vector2(0.5f, 0);
+            btnRT.anchorMax = new Vector2(0.5f, 0);
+            btnRT.pivot = new Vector2(0.5f, 0);
+            btnRT.anchoredPosition = new Vector2(0, Pad);
+            btnRT.sizeDelta = new Vector2(200f, 44f);
+
+            var btnImg = btnGO.GetComponent<Image>();
+            btnImg.color = new Color(0.15f, 0.56f, 0.91f, 0.96f);
+
+            var btnLabelGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            btnLabelGO.transform.SetParent(btnGO.transform, false);
+            var btnLabelRT = btnLabelGO.GetComponent<RectTransform>();
+            btnLabelRT.anchorMin = Vector2.zero;
+            btnLabelRT.anchorMax = Vector2.one;
+            btnLabelRT.offsetMin = Vector2.zero;
+            btnLabelRT.offsetMax = Vector2.zero;
+
+            var btnLabel = btnLabelGO.GetComponent<TextMeshProUGUI>();
+            btnLabel.text = "NEXT HAND";
+            btnLabel.alignment = TextAlignmentOptions.Center;
+            btnLabel.fontSize = 20;
+            btnLabel.fontStyle = FontStyles.Bold;
+            btnLabel.color = Color.white;
+            btnLabel.raycastTarget = false;
+
+            _nextHandButton = btnGO.GetComponent<Button>();
+            _nextHandButton.onClick.AddListener(OnNextHandClicked);
+
             _showdownPanel.SetActive(false);
+        }
+
+        private void OnNextHandClicked()
+        {
+            HideShowdown();
+            if (_gameManager != null)
+                _ = _gameManager.AdvanceStepAsync();
         }
     }
 }

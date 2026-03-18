@@ -116,6 +116,14 @@ namespace HijackPoker.UI
                              string.Equals(player.Username, localPlayerName, System.StringComparison.OrdinalIgnoreCase);
             _isLocalPlayer = nameMatch || player.Seat == 1;
 
+            // Scale up avatar for local player to make them distinct
+            if (_avatarRingImage != null)
+            {
+                var avatarParent = _avatarRingImage.transform.parent;
+                if (avatarParent != null)
+                    avatarParent.localScale = _isLocalPlayer ? Vector3.one * 1.35f : Vector3.one;
+            }
+
             _nameText.text = _isLocalPlayer
                 ? $"{localPlayerName} <size=10><color=#6EC6FF>(You)</color></size>"
                 : player.Username;
