@@ -93,12 +93,10 @@ namespace HijackPoker.UI
             if (img != null)
                 img.color = _gameManager.IsAutoPlaying ? AutoPlayActiveColor : AutoPlayIdleColor;
             _autoPlayButtonText.text = _gameManager.IsAutoPlaying ? "Stop" : "Auto Play";
-            _autoPlayButton.interactable = !inBettingStep;
-            if (inBettingStep && _gameManager.IsAutoPlaying)
-                _gameManager.ToggleAutoPlay();
 
+            // Show action panel only during betting when NOT auto-playing
             if (_actionPanel != null)
-                _actionPanel.SetActive(inBettingStep);
+                _actionPanel.SetActive(inBettingStep && !_gameManager.IsAutoPlaying);
             if (_foldButton != null) _foldButton.interactable = _canActNow;
             if (_callButton != null) _callButton.interactable = _canActNow;
 

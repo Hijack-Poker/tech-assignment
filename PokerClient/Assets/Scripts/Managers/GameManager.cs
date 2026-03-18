@@ -134,11 +134,47 @@ namespace HijackPoker.Managers
             while (IsAutoPlaying)
             {
                 yield return new WaitForSeconds(_autoPlaySpeed);
-                if (!_isProcessing)
+                if (_isProcessing) continue;
+
+                var state = _stateManager?.CurrentState;
+                if (state?.Game == null) continue;
+
+                int step = state.Game.HandStep;
+                int move = state.Game.Move;
+
+                // Betting round: auto-submit call/check for the acting player
+                if (IsBettingStep(step) && move > 0)
+                {
+                    var actor = state.Players?.Find(p => p.Seat == move);
+                    if (actor != null && !actor.IsFolded && !actor.IsAllIn)
+                    {
+                        float toCall = state.Game.CurrentBet - actor.Bet;
+                        if (toCall <= 0)
+                            _ = AdvanceStepAsync("check", 0f);
+                        else
+                            _ = AdvanceStepAsync("call", toCall);
+                    }
+                    else
+                    {
+                        _ = AdvanceStepAsync();
+                    }
+                }
+                // Hand complete: auto-advance to next hand
+                else if (state.Game.Status == "completed" || step >= 15)
+                {
+                    _ = AdvanceStepAsync();
+                }
+                // Non-betting step: just advance
+                else
                 {
                     _ = AdvanceStepAsync();
                 }
             }
+        }
+
+        private static bool IsBettingStep(int step)
+        {
+            return step == 5 || step == 7 || step == 9 || step == 11;
         }
 
         private void OnDestroy()
