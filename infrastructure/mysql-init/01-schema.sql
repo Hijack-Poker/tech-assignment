@@ -124,4 +124,6 @@ INSERT INTO players (guid, username, email, balance) VALUES
 -- Sample table
 INSERT INTO game_tables (name, table_type, game_type, max_seats, small_blind, big_blind, min_buy_in, max_buy_in) VALUES
   ('Starter Table', 's', 'texas', 6, 1.00, 2.00, 40.00, 200.00),
-  ('High Stakes', 's', 'texas', 9, 5.00, 10.00, 200.00, 1000.00);
+  ('High Stakes', 's', 'texas', 9, 5.00, 10.00, 200.00, 1000.00),
+  ('The Velvet', 's', 'texas', 6, 2.00, 5.00, 100.00, 500.00),
+  ('The Noir', 's', 'texas', 9, 10.00, 20.00, 400.00, 2000.00);
