@@ -50,12 +50,31 @@ namespace HijackPoker.UI
         {
             RemoveLegacyControlsChildren();
             EnsureActionPanel();
-            _nextStepButton.onClick.AddListener(OnNextStepClicked);
-            _autoPlayButton.onClick.AddListener(OnAutoPlayClicked);
+
+            // Fallback: find buttons by name if serialized fields are null
+            if (_nextStepButton == null)
+            {
+                var go = GameObject.Find("NextStepButton");
+                if (go != null) _nextStepButton = go.GetComponent<Button>();
+            }
+            if (_autoPlayButton == null)
+            {
+                var go = GameObject.Find("AutoPlayButton");
+                if (go != null)
+                {
+                    _autoPlayButton = go.GetComponent<Button>();
+                    _autoPlayButtonText = go.GetComponentInChildren<TextMeshProUGUI>();
+                }
+            }
+
+            if (_nextStepButton != null) _nextStepButton.onClick.AddListener(OnNextStepClicked);
+            if (_autoPlayButton != null) _autoPlayButton.onClick.AddListener(OnAutoPlayClicked);
             if (_foldButton != null) _foldButton.onClick.AddListener(OnFoldClicked);
             if (_callButton != null) _callButton.onClick.AddListener(OnCallClicked);
             if (_raiseButton != null) _raiseButton.onClick.AddListener(OnRaiseClicked);
             if (_allInButton != null) _allInButton.onClick.AddListener(OnAllInClicked);
+
+            Debug.Log($"[ControlsView] Awake: autoPlayButton={_autoPlayButton != null}, nextStepButton={_nextStepButton != null}");
 
             for (int i = 0; i < _speedButtons.Length; i++)
             {
@@ -87,12 +106,38 @@ namespace HijackPoker.UI
             bool driverCanAct = inBettingStep && state?.Game != null && state.Game.Move > 0;
             ComputeActionContext(state, inBettingStep, driverCanAct);
 
-            _nextStepButton.interactable = !_gameManager.IsAutoPlaying && !inBettingStep;
+            if (_nextStepButton != null)
+                _nextStepButton.interactable = !_gameManager.IsAutoPlaying && !inBettingStep;
+            if (_autoPlayButton == null) return;
 
             var img = _autoPlayButton.GetComponent<Image>();
             if (img != null)
                 img.color = _gameManager.IsAutoPlaying ? AutoPlayActiveColor : AutoPlayIdleColor;
-            _autoPlayButtonText.text = _gameManager.IsAutoPlaying ? "Stop" : "Auto Play";
+            if (_autoPlayButtonText != null)
+            {
+                if (_gameManager.IsAutoPlaying)
+                {
+                    string styleName = _gameManager.PlayStyle switch
+                    {
+                        AutoPlayStyle.Safe => "Safe",
+                        AutoPlayStyle.SmallRandom => "Small",
+                        AutoPlayStyle.Hard => "Hard",
+                        _ => ""
+                    };
+                    _autoPlayButtonText.text = $"STOP\n<size=10>({styleName})</size>";
+                }
+                else
+                {
+                    string nextName = _nextAutoStyle switch
+                    {
+                        AutoPlayStyle.Safe => "Safe",
+                        AutoPlayStyle.SmallRandom => "Small",
+                        AutoPlayStyle.Hard => "Hard",
+                        _ => ""
+                    };
+                    _autoPlayButtonText.text = $"AUTO\n<size=10>{nextName}</size>";
+                }
+            }
 
             // Show action panel only during betting when NOT auto-playing
             if (_actionPanel != null)
@@ -133,8 +178,29 @@ namespace HijackPoker.UI
 
         private void OnAutoPlayClicked()
         {
-            _gameManager.ToggleAutoPlay();
+            if (_gameManager == null) return;
+
+            if (_gameManager.IsAutoPlaying)
+            {
+                // Stop auto-play
+                _gameManager.ToggleAutoPlay();
+                return;
+            }
+
+            // Cycle through styles: Safe → Small → Hard → Safe...
+            // First click starts Safe, subsequent clicks while stopped cycle
+            _gameManager.StartAutoPlayWithStyle(_nextAutoStyle);
+
+            // Queue up next style for when they stop and click again
+            _nextAutoStyle = _nextAutoStyle switch
+            {
+                AutoPlayStyle.Safe => AutoPlayStyle.SmallRandom,
+                AutoPlayStyle.SmallRandom => AutoPlayStyle.Hard,
+                _ => AutoPlayStyle.Safe,
+            };
         }
+
+        private AutoPlayStyle _nextAutoStyle = AutoPlayStyle.Safe;
 
         private void OnSpeedSelected(int index)
         {
