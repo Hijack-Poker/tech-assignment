@@ -4,7 +4,7 @@
   "private": true,
   "description": "Cash game broadcast — EventBridge consumer, WebSocket publisher",
   "scripts": {
-    "start": "npx serverless offline --config serverless.offline.yml --host 0.0.0.0",
+    "start": "node local-server.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --forceExit"
   },
   "dependencies": {
@@ -16,7 +16,8 @@
     "sequelize": "^6.37.0",
     "serverless": "^4.33.0",
     "serverless-offline": "^14.5.0",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "jest": "^29.7.0"
