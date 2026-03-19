@@ -132,7 +132,7 @@ async function getTableHttp(event) {
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({ error: 'Internal server error' }),
     };
   }
 }

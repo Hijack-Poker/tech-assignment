@@ -9,105 +9,95 @@ const { logger } = require('../shared/config/logger');
  * Returns { game, players } or null if not found.
  */
 async function fetchTable(tableId) {
-  try {
-    // Get the active game for this table
-    const [game] = await sequelize.query(
-      `SELECT g.*, gt.small_blind, gt.big_blind, gt.max_seats, gt.name as table_name
-       FROM games g
-       JOIN game_tables gt ON g.table_id = gt.id
-       WHERE g.table_id = :tableId AND g.status = 'in_progress'
-       ORDER BY g.game_no DESC
-       LIMIT 1`,
-      { replacements: { tableId }, type: QueryTypes.SELECT }
-    );
+  // Get the active game for this table
+  const [game] = await sequelize.query(
+    `SELECT g.*, gt.small_blind, gt.big_blind, gt.max_seats, gt.name as table_name
+     FROM games g
+     JOIN game_tables gt ON g.table_id = gt.id
+     WHERE g.table_id = :tableId AND g.status = 'in_progress'
+     ORDER BY g.game_no DESC
+     LIMIT 1`,
+    { replacements: { tableId }, type: QueryTypes.SELECT }
+  );
 
-    if (!game) {
-      // No active game — create a new one
-      return await createNewGame(tableId);
-    }
-
-    // Get players in this game
-    const players = await sequelize.query(
-      `SELECT gp.*, p.guid, p.username
-       FROM game_players gp
-       JOIN players p ON gp.player_id = p.id
-       WHERE gp.game_id = :gameId
-       ORDER BY gp.seat`,
-      { replacements: { gameId: game.id }, type: QueryTypes.SELECT }
-    );
-
-    return {
-      game: normalizeGame(game),
-      players: players.map(normalizePlayer),
-    };
-  } catch (err) {
-    logger.error(`Failed to fetch table ${tableId}: ${err.message || err}`, { stack: err.stack });
-    return null;
+  if (!game) {
+    // No active game — create a new one
+    return await createNewGame(tableId);
   }
+
+  // Get players in this game
+  const players = await sequelize.query(
+    `SELECT gp.*, p.guid, p.username
+     FROM game_players gp
+     JOIN players p ON gp.player_id = p.id
+     WHERE gp.game_id = :gameId
+     ORDER BY gp.seat`,
+    { replacements: { gameId: game.id }, type: QueryTypes.SELECT }
+  );
+
+  return {
+    game: normalizeGame(game),
+    players: players.map(normalizePlayer),
+  };
 }
 
 /**
  * Create a new game for a table with the seeded players.
  */
 async function createNewGame(tableId) {
-  try {
-    const [table] = await sequelize.query(
-      `SELECT * FROM game_tables WHERE id = :tableId`,
-      { replacements: { tableId }, type: QueryTypes.SELECT }
+  const [table] = await sequelize.query(
+    `SELECT * FROM game_tables WHERE id = :tableId`,
+    { replacements: { tableId }, type: QueryTypes.SELECT }
+  );
+
+  if (!table) return null;
+
+  const maxSeats = parseInt(table.max_seats, 10) || 6;
+
+  // Get players (for skeleton, use the seeded players)
+  const allPlayers = await sequelize.query(
+    `SELECT * FROM players ORDER BY id LIMIT ${maxSeats}`,
+    { type: QueryTypes.SELECT }
+  );
+
+  if (allPlayers.length < 2) return null;
+
+  // Get next game number
+  const [lastGame] = await sequelize.query(
+    `SELECT COALESCE(MAX(game_no), 0) + 1 as next_no FROM games WHERE table_id = :tableId`,
+    { replacements: { tableId }, type: QueryTypes.SELECT }
+  );
+  const nextGameNo = lastGame?.next_no || 1;
+
+  // Insert game record
+  const [gameId] = await sequelize.query(
+    `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
+     VALUES (:tableId, :gameNo, 0, 1, 0, 'in_progress')`,
+    { replacements: { tableId, gameNo: nextGameNo }, type: QueryTypes.INSERT }
+  );
+
+  // Insert game players
+  for (let i = 0; i < allPlayers.length; i++) {
+    const player = allPlayers[i];
+    const buyIn = (parseFloat(table.min_buy_in) + parseFloat(table.max_buy_in)) / 2;
+    await sequelize.query(
+      `INSERT INTO game_players (game_id, table_id, player_id, seat, stack, status)
+       VALUES (:gameId, :tableId, :playerId, :seat, :stack, '1')`,
+      {
+        replacements: {
+          gameId,
+          tableId,
+          playerId: player.id,
+          seat: i + 1,
+          stack: buyIn,
+        },
+        type: QueryTypes.INSERT,
+      }
     );
-
-    if (!table) return null;
-
-    const maxSeats = parseInt(table.max_seats, 10) || 6;
-
-    // Get players (for skeleton, use the seeded players)
-    const allPlayers = await sequelize.query(
-      `SELECT * FROM players ORDER BY id LIMIT ${maxSeats}`,
-      { type: QueryTypes.SELECT }
-    );
-
-    if (allPlayers.length < 2) return null;
-
-    // Get next game number
-    const [lastGame] = await sequelize.query(
-      `SELECT COALESCE(MAX(game_no), 0) + 1 as next_no FROM games WHERE table_id = :tableId`,
-      { replacements: { tableId }, type: QueryTypes.SELECT }
-    );
-    const nextGameNo = lastGame?.next_no || 1;
-
-    // Insert game record
-    const [gameId] = await sequelize.query(
-      `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
-       VALUES (:tableId, :gameNo, 0, 1, 0, 'in_progress')`,
-      { replacements: { tableId, gameNo: nextGameNo }, type: QueryTypes.INSERT }
-    );
-
-    // Insert game players
-    for (let i = 0; i < allPlayers.length; i++) {
-      const player = allPlayers[i];
-      const buyIn = (parseFloat(table.min_buy_in) + parseFloat(table.max_buy_in)) / 2;
-      await sequelize.query(
-        `INSERT INTO game_players (game_id, table_id, player_id, seat, stack, status)
-         VALUES (:gameId, :tableId, :playerId, :seat, :stack, '1')`,
-        {
-          replacements: {
-            gameId,
-            tableId,
-            playerId: player.id,
-            seat: i + 1,
-            stack: buyIn,
-          },
-          type: QueryTypes.INSERT,
-        }
-      );
-    }
-
-    // Re-fetch the created game
-    return fetchTable(tableId);
-  } catch (err) {
-    logger.error(`Failed to create new game for table ${tableId}: ${err.message}`);
-    return null;
   }
+
+  // Re-fetch the created game
+  return fetchTable(tableId);
 }
 
 /**
