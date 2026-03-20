@@ -1,0 +1,16 @@
+{
+  "name": "hijack-e2e",
+  "private": true,
+  "scripts": {
+    "test": "npx playwright test",
+    "test:api": "npx playwright test --project=api",
+    "test:viewer": "npx playwright test --project=hand-viewer",
+    "test:webgl": "npx playwright test --project=webgl-smoke",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0"
+  }
+}

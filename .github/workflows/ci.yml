@@ -66,3 +66,43 @@ jobs:
 
       - run: npm install
       - run: npm test
+
+  test-e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Start Docker Compose stack
+        run: docker compose --profile engine up -d
+        working-directory: .
+        env:
+          TEARDOWN: "true"
+
+      - name: Wait for services to be healthy
+        run: |
+          timeout 120 bash -c 'until curl -sf http://localhost:3030/health; do sleep 2; done'
+        working-directory: .
+
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          TEARDOWN: "true"
+
+      - name: Stop Docker Compose stack
+        if: always()
+        run: docker compose --profile engine down -v
+        working-directory: .

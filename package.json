@@ -10,6 +10,11 @@
     "stop": "docker compose down -v",
     "seed:rewards": "node scripts/seed-rewards.js",
     "seed:streaks": "node scripts/seed-streaks.js",
-    "simulate:hands": "node scripts/simulate-hands.js"
+    "simulate:hands": "node scripts/simulate-hands.js",
+    "test:e2e": "cd e2e && npx playwright test",
+    "test:e2e:api": "cd e2e && npx playwright test --project=api",
+    "test:e2e:viewer": "cd e2e && npx playwright test --project=hand-viewer",
+    "test:e2e:webgl": "cd e2e && npx playwright test --project=webgl-smoke",
+    "test:e2e:install": "cd e2e && npm install && npx playwright install chromium"
   }
 }
