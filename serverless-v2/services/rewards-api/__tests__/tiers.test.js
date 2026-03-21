@@ -73,6 +73,11 @@ describe('Tier Service', () => {
     it('returns Platinum (4) for very high points', () => {
       expect(getTierForPoints(999999)).toBe(4);
     });
+
+    it('returns Bronze (1) for negative points', () => {
+      expect(getTierForPoints(-1)).toBe(1);
+      expect(getTierForPoints(-1000)).toBe(1);
+    });
   });
 
   describe('checkTierAdvancement', () => {
@@ -114,6 +119,14 @@ describe('Tier Service', () => {
     it('returns null when already at max tier', () => {
       expect(checkTierAdvancement(4, 50000)).toBeNull();
     });
+
+    it('returns Platinum when points jump from 0 to 10000 (multi-tier skip)', () => {
+      const result = checkTierAdvancement(1, 10000);
+      expect(result).not.toBeNull();
+      expect(result.advanced).toBe(true);
+      expect(result.newTier).toBe(4);
+      expect(result.tierInfo.name).toBe('Platinum');
+    });
   });
 
   describe('calculateResetTier', () => {
@@ -131,6 +144,13 @@ describe('Tier Service', () => {
 
     it('keeps Bronze (1) at Bronze (1)', () => {
       expect(calculateResetTier(1)).toBe(1);
+    });
+
+    it('is idempotent — calling twice on Bronze gives same result', () => {
+      const first = calculateResetTier(1);
+      const second = calculateResetTier(first);
+      expect(first).toBe(1);
+      expect(second).toBe(1);
     });
   });
 });
@@ -185,6 +205,28 @@ describe('Notification Service', () => {
     it('detects all milestones from 0 to 10000+', () => {
       const milestones = checkMilestones(10001, 0);
       expect(milestones).toHaveLength(5);
+    });
+
+    it('returns exactly [100] milestone when reaching 100 from 0', () => {
+      const milestones = checkMilestones(100, 0);
+      expect(milestones).toHaveLength(1);
+      expect(milestones[0].points).toBe(100);
+    });
+
+    it('returns empty when just below 100 milestone', () => {
+      const milestones = checkMilestones(99, 0);
+      expect(milestones).toHaveLength(0);
+    });
+
+    it('returns only [500] when crossing 500 but not others', () => {
+      const milestones = checkMilestones(600, 400);
+      expect(milestones).toHaveLength(1);
+      expect(milestones[0].points).toBe(500);
+    });
+
+    it('returns empty when already at milestone (no crossing)', () => {
+      const milestones = checkMilestones(100, 100);
+      expect(milestones).toHaveLength(0);
     });
   });
 });

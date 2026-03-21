@@ -40,6 +40,20 @@ describe('Points Service', () => {
       expect(calculateBasePoints(9.99)).toBe(5);
       expect(calculateBasePoints(10.00)).toBe(10);
     });
+
+    it('returns 1 for negative bigBlind values', () => {
+      expect(calculateBasePoints(-1)).toBe(1);
+      expect(calculateBasePoints(-100)).toBe(1);
+    });
+
+    it('returns 1 for tiny fractional bigBlind', () => {
+      expect(calculateBasePoints(0.01)).toBe(1);
+    });
+
+    it('returns 10 for extremely large bigBlind values', () => {
+      expect(calculateBasePoints(1000)).toBe(10);
+      expect(calculateBasePoints(999999)).toBe(10);
+    });
   });
 
   describe('applyMultiplier', () => {
@@ -69,6 +83,22 @@ describe('Points Service', () => {
 
     it('defaults to 1.0x for unknown tier level', () => {
       expect(applyMultiplier(5, 99)).toBe(5);
+    });
+
+    it('produces correct floating point results with Silver multiplier', () => {
+      expect(applyMultiplier(3, 2)).toBe(3.75); // 3 * 1.25
+    });
+
+    it('produces correct floating point results with Gold multiplier', () => {
+      expect(applyMultiplier(7, 3)).toBe(10.5); // 7 * 1.5
+    });
+
+    it('defaults to 1.0x for tier level 0 (invalid below range)', () => {
+      expect(applyMultiplier(5, 0)).toBe(5);
+    });
+
+    it('defaults to 1.0x for tier level 5 (invalid above range)', () => {
+      expect(applyMultiplier(5, 5)).toBe(5);
     });
   });
 
