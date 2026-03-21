@@ -80,6 +80,17 @@ export interface NotificationsResponse {
   unreadCount: number;
 }
 
+export interface TierHistoryEntry {
+  monthKey: string;
+  tier: number;
+  monthlyPoints: number;
+  peakTier: number;
+}
+
+export interface TierHistoryResponse {
+  tierHistory: TierHistoryEntry[];
+}
+
 // ── API Definition ──────────────────────────────────────────────────────
 
 export const rewardsApi = createApi({
@@ -114,6 +125,10 @@ export const rewardsApi = createApi({
       },
       providesTags: ['Notifications'],
     }),
+    getTierHistory: builder.query<TierHistoryResponse, void>({
+      query: () => '/api/v1/player/rewards/tier-history',
+      providesTags: ['Rewards'],
+    }),
     dismissNotification: builder.mutation<{ success: boolean }, string>({
       query: (id) => ({
         url: `/api/v1/player/notifications/${id}/dismiss`,
@@ -129,5 +144,6 @@ export const {
   useGetPointsHistoryQuery,
   useGetLeaderboardQuery,
   useGetNotificationsQuery,
+  useGetTierHistoryQuery,
   useDismissNotificationMutation,
 } = rewardsApi;

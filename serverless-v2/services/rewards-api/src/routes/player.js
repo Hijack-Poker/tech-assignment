@@ -110,4 +110,28 @@ router.get('/rewards/history', validate(historyQuerySchema), async (req, res) =>
   }
 });
 
+/**
+ * GET /api/v1/player/rewards/tier-history
+ *
+ * Get a player's tier history for the last 6 months.
+ */
+router.get('/rewards/tier-history', async (req, res) => {
+  try {
+    const { playerId } = req;
+    const tierHistory = await dynamo.getTierHistory(playerId, 6);
+
+    return res.status(200).json({
+      tierHistory: tierHistory || [],
+    });
+  } catch (err) {
+    console.error('Get tier history error:', err);
+    return res.status(500).json({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to get tier history',
+      },
+    });
+  }
+});
+
 module.exports = router;

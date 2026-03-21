@@ -46,11 +46,11 @@ function getNextTier(currentTierName) {
  * Milestone definitions — lifetime points thresholds that trigger notifications.
  */
 const MILESTONES = [
-  { points: 100, name: 'First Steps', message: "You've earned your first 100 points!" },
-  { points: 500, name: 'Rising Star', message: '500 points earned — Silver is within reach!' },
-  { points: 1000, name: 'High Roller', message: "1,000 points! You're on fire!" },
-  { points: 5000, name: 'Point Master', message: '5,000 points earned this month!' },
-  { points: 10000, name: 'Legend', message: '10,000 points — Platinum status achieved!' },
+  { points: 100, name: 'First Steps', message: "You've earned 100 lifetime points!" },
+  { points: 500, name: 'Rising Star', message: '500 lifetime points — keep it up!' },
+  { points: 1000, name: 'High Roller', message: '1,000 lifetime points earned!' },
+  { points: 5000, name: 'Point Master', message: '5,000 lifetime points — impressive!' },
+  { points: 10000, name: 'Legend', message: '10,000 lifetime points achieved!' },
 ];
 
 /**

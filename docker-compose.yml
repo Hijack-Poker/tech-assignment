@@ -313,7 +313,7 @@ services:
     working_dir: /app
     volumes:
       - ./serverless-v2/services/rewards-api:/app
-      - ./serverless-v2/shared:/app/shared
+      - ./serverless-v2/shared:/shared
     depends_on:
       dynamodb-local:
         condition: service_healthy
@@ -323,13 +323,18 @@ services:
       REWARDS_PLAYERS_TABLE: rewards-players
       REWARDS_TRANSACTIONS_TABLE: rewards-transactions
       ADMIN_API_KEY: admin-secret-key
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: hijack
+      MYSQL_PASSWORD: hijack_dev
+      MYSQL_DATABASE: hijack_poker
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+        npm install && ln -sf /app/node_modules /shared/node_modules && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
 
   rewards-frontend:
     image: node:22-alpine

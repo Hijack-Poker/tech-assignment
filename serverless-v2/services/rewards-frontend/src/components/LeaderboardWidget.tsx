@@ -67,7 +67,7 @@ export default function LeaderboardWidget() {
     );
   }
 
-  if (!data || data.leaderboard.length === 0) {
+  if (!data || !data.leaderboard || data.leaderboard.length === 0) {
     return (
       <Card>
         <CardHeader title="Monthly Leaderboard" />

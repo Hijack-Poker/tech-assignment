@@ -1,8 +1,5 @@
 'use strict';
 
-const { sequelize } = require('../../shared/config/db');
-const { QueryTypes } = require('sequelize');
-
 /**
  * Look up a player's display name from the MySQL players table.
  * @param {string} playerId - The player's GUID
@@ -10,6 +7,8 @@ const { QueryTypes } = require('sequelize');
  */
 async function lookupDisplayName(playerId) {
   try {
+    const { sequelize } = require('../../shared/config/db');
+    const { QueryTypes } = require('sequelize');
     const results = await sequelize.query(
       'SELECT username FROM players WHERE guid = :playerId LIMIT 1',
       {

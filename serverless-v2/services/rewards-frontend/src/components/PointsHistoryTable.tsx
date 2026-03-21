@@ -110,7 +110,7 @@ export default function PointsHistoryTable() {
             <TableBody>
               {isLoading && <SkeletonRows count={5} />}
 
-              {!isLoading && data && data.transactions.length === 0 && (
+              {!isLoading && data && data.transactions?.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} sx={{ borderBottom: 0 }}>
                     <Box sx={{ textAlign: 'center', py: 6 }}>
@@ -126,7 +126,7 @@ export default function PointsHistoryTable() {
               )}
 
               {!isLoading &&
-                data &&
+                data?.transactions &&
                 data.transactions.map((tx) => (
                   <TableRow
                     key={tx.handId}
@@ -179,7 +179,7 @@ export default function PointsHistoryTable() {
         </TableContainer>
       )}
 
-      {!isError && data && data.pagination.total > 0 && (
+      {!isError && data?.pagination && data.pagination.total > 0 && (
         <TablePagination
           component="div"
           count={data.pagination.total}

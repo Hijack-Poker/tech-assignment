@@ -129,31 +129,65 @@ async function seedTransactions() {
 
   for (const p of PLAYERS) {
     const tier = getTierByLevel(p.currentTier);
-    const txCount = randomInt(10, 20);
+    let remainingPoints = p.monthlyPoints;
+    const transactions = [];
 
-    for (let i = 0; i < txCount; i++) {
-      const isAdjustment = i >= txCount - 2 && Math.random() < 0.3;
-      const type = isAdjustment ? 'adjustment' : 'gameplay';
-      const dayOfMonth = Math.min(randomInt(1, 21), 21);
-      const timestamp = randomTimestampThisMonth(dayOfMonth);
+    // Generate transactions that sum to the player's monthlyPoints
+    while (remainingPoints > 0) {
+      const bracket = STAKE_BRACKETS[randomInt(0, Math.min(tier.level, STAKE_BRACKETS.length - 1))];
+      const basePoints = bracket.basePoints;
+      const multiplier = tier.multiplier;
+      const earnedPoints = Math.round(basePoints * multiplier * 100) / 100;
 
-      let basePoints, multiplier, earnedPoints, handId, tableId, tableStakes, bigBlind, reason;
-
-      if (type === 'gameplay') {
-        const bracket = STAKE_BRACKETS[randomInt(0, STAKE_BRACKETS.length - 1)];
-        basePoints = bracket.basePoints;
-        multiplier = tier.multiplier;
-        earnedPoints = Math.round(basePoints * multiplier * 100) / 100;
-        handId = `hand-${String(handCounter++).padStart(3, '0')}`;
-        tableId = randomInt(1, 2);
-        tableStakes = bracket.stakes;
-        bigBlind = bracket.bigBlind;
+      if (earnedPoints > remainingPoints) {
+        // Final transaction: use exact remaining points
+        const finalBase = Math.round((remainingPoints / multiplier) * 100) / 100;
+        transactions.push({
+          type: 'gameplay',
+          basePoints: finalBase,
+          multiplier,
+          earnedPoints: remainingPoints,
+          handId: `hand-${String(handCounter++).padStart(3, '0')}`,
+          tableId: randomInt(1, 2),
+          tableStakes: bracket.stakes,
+          bigBlind: bracket.bigBlind,
+        });
+        remainingPoints = 0;
       } else {
-        basePoints = randomInt(10, 50);
-        multiplier = 1.0;
-        earnedPoints = basePoints;
-        reason = 'Tournament bonus credit';
+        transactions.push({
+          type: 'gameplay',
+          basePoints,
+          multiplier,
+          earnedPoints,
+          handId: `hand-${String(handCounter++).padStart(3, '0')}`,
+          tableId: randomInt(1, 2),
+          tableStakes: bracket.stakes,
+          bigBlind: bracket.bigBlind,
+        });
+        remainingPoints -= earnedPoints;
       }
+
+      // Safety: cap at 50 transactions per player
+      if (transactions.length >= 50) {
+        if (remainingPoints > 0) {
+          transactions.push({
+            type: 'adjustment',
+            basePoints: remainingPoints,
+            multiplier: 1.0,
+            earnedPoints: remainingPoints,
+            reason: 'Points reconciliation',
+          });
+          remainingPoints = 0;
+        }
+        break;
+      }
+    }
+
+    // Write transactions with spread-out timestamps
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      const dayOfMonth = Math.max(1, Math.min(21, Math.floor((i / transactions.length) * 20) + 1));
+      const timestamp = randomTimestampThisMonth(dayOfMonth);
 
       await docClient.send(
         new PutCommand({
@@ -161,16 +195,16 @@ async function seedTransactions() {
           Item: {
             playerId: p.playerId,
             timestamp,
-            handId,
-            type,
-            basePoints,
-            multiplier,
-            earnedPoints,
-            tableId,
-            tableStakes,
-            bigBlind,
+            handId: tx.handId,
+            type: tx.type,
+            basePoints: tx.basePoints,
+            multiplier: tx.multiplier,
+            earnedPoints: tx.earnedPoints,
+            tableId: tx.tableId,
+            tableStakes: tx.tableStakes,
+            bigBlind: tx.bigBlind,
             monthKey: getCurrentMonthKey(),
-            reason,
+            reason: tx.reason,
           },
         })
       );
@@ -265,34 +299,61 @@ async function seedNotifications() {
   let count = 0;
   const thirtyDaysFromNow = Math.floor(Date.now() / 1000) + 30 * 86400;
 
-  const notificationTemplates = [
-    { type: 'tier_upgrade', title: 'Tier Upgrade!', messageFn: (name) => `Congratulations! You've reached ${name} tier` },
-    { type: 'milestone', title: 'Rising Star', messageFn: () => '500 points earned — Silver is within reach!' },
-    { type: 'milestone', title: 'High Roller', messageFn: () => "1,000 points! You're on fire!" },
-    { type: 'tier_upgrade', title: 'Welcome to Gold!', messageFn: () => "You've unlocked Gold tier — 1.5x multiplier active" },
-    { type: 'milestone', title: 'First Steps', messageFn: () => "You've earned your first 100 points!" },
+  // Milestones: only include ones the player has actually reached
+  const MILESTONES = [
+    { threshold: 100, title: 'First Steps', message: "You've earned 100 lifetime points!" },
+    { threshold: 500, title: 'Rising Star', message: '500 lifetime points — keep it up!' },
+    { threshold: 1000, title: 'High Roller', message: '1,000 lifetime points earned!' },
+    { threshold: 5000, title: 'Point Master', message: '5,000 lifetime points — impressive!' },
+    { threshold: 10000, title: 'Legend', message: '10,000 lifetime points achieved!' },
   ];
 
   for (const p of PLAYERS) {
-    const tier = getTierByLevel(p.currentTier);
-    const notifCount = randomInt(2, 3);
+    const notifications = [];
 
-    for (let i = 0; i < notifCount; i++) {
-      const template = notificationTemplates[randomInt(0, notificationTemplates.length - 1)];
-      const dismissed = i < notifCount - 1; // last notification is unread
-      const createdDaysAgo = randomInt(1, 20);
+    // Add tier upgrade notification if player is above Bronze
+    if (p.currentTier >= 2) {
+      const tierName = getTierByLevel(p.currentTier).name;
+      notifications.push({
+        type: 'tier_upgrade',
+        title: 'Tier Upgrade!',
+        message: `Congratulations! You've reached ${tierName} tier`,
+        daysAgo: randomInt(3, 15),
+        dismissed: true,
+      });
+    }
 
+    // Add milestone notifications only for milestones the player has actually passed
+    const reachedMilestones = MILESTONES.filter((m) => p.lifetimePoints >= m.threshold);
+    // Pick the most recent 1-2 milestones
+    const recentMilestones = reachedMilestones.slice(-2);
+    for (const m of recentMilestones) {
+      notifications.push({
+        type: 'milestone',
+        title: m.title,
+        message: m.message,
+        daysAgo: randomInt(1, 20),
+        dismissed: notifications.length > 0, // first one dismissed, last one unread
+      });
+    }
+
+    // Make sure the last notification is unread
+    if (notifications.length > 0) {
+      notifications[notifications.length - 1].dismissed = false;
+    }
+
+    for (const n of notifications) {
       await docClient.send(
         new PutCommand({
           TableName: TABLES.NOTIFICATIONS,
           Item: {
             playerId: p.playerId,
             notificationId: crypto.randomUUID(),
-            type: template.type,
-            title: template.title,
-            message: template.messageFn(tier.name),
-            dismissed,
-            createdAt: new Date(Date.now() - createdDaysAgo * 86400000).toISOString(),
+            type: n.type,
+            title: n.title,
+            message: n.message,
+            dismissed: n.dismissed,
+            createdAt: new Date(Date.now() - n.daysAgo * 86400000).toISOString(),
             ttl: thirtyDaysFromNow,
           },
         })

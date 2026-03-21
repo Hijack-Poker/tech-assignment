@@ -12,6 +12,7 @@ import {
   Chip,
 } from '@mui/material';
 import { login } from '../store';
+import { rewardsApi } from '../api/rewardsApi';
 
 /** Seeded players from MySQL init script */
 const SEEDED_PLAYERS = [
@@ -32,6 +33,7 @@ function Login() {
     const targetId = id ?? playerId.trim();
     if (targetId) {
       localStorage.setItem('playerId', targetId);
+      dispatch(rewardsApi.util.resetApiState());
       dispatch(login(targetId));
       navigate('/');
     }

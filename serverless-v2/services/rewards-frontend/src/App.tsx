@@ -12,7 +12,7 @@ import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import NotificationBell from './components/NotificationBell';
 import { logout } from './store';
-import { useGetPlayerRewardsQuery } from './api/rewardsApi';
+import { useGetPlayerRewardsQuery, rewardsApi } from './api/rewardsApi';
 
 function AppNavBar() {
   const dispatch = useDispatch();
@@ -25,6 +25,7 @@ function AppNavBar() {
   const handleLogout = () => {
     localStorage.removeItem('playerId');
     dispatch(logout());
+    dispatch(rewardsApi.util.resetApiState());
     navigate('/login');
   };
 

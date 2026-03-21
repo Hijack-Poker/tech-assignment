@@ -57,7 +57,7 @@ export default function TierSummaryCard() {
     );
   }
 
-  if (!data) {
+  if (!data || !data.currentTier) {
     return (
       <Card sx={{ p: 3 }}>
         <Typography variant="body2" color="text.secondary" textAlign="center">

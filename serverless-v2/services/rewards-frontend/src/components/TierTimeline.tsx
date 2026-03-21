@@ -1,4 +1,4 @@
-import { Box, Card, CardHeader, Skeleton, Typography } from '@mui/material';
+import { Box, Card, CardHeader, Skeleton, Typography, Alert, Button } from '@mui/material';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import {
   AreaChart,
@@ -9,43 +9,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { useGetTierHistoryQuery } from '../api/rewardsApi';
 
-interface TierHistoryPoint {
-  monthKey: string;
-  tier: number;
-  tierName: string;
-}
-
-// Mock data for demonstration — will be replaced when tier-history API is available
-function getMockTierHistory(): TierHistoryPoint[] {
-  const now = new Date();
-  const tierNames: Record<number, string> = {
-    1: 'Bronze',
-    2: 'Silver',
-    3: 'Gold',
-    4: 'Platinum',
-  };
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const mockTiers = [1, 1, 2, 2, 3, 3];
-  const result: TierHistoryPoint[] = [];
-
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const tier = mockTiers[5 - i];
-    result.push({
-      monthKey: monthNames[d.getMonth()],
-      tier,
-      tierName: tierNames[tier],
-    });
-  }
-
-  return result;
-}
-
-interface TierTimelineProps {
-  data?: TierHistoryPoint[];
-  isLoading?: boolean;
-}
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const tierTickFormatter = (val: number): string => {
   const labels: Record<number, string> = { 1: 'Bronze', 2: 'Silver', 3: 'Gold', 4: 'Platinum' };
@@ -59,7 +25,18 @@ const tooltipFormatter = (value: any): [string, string] => {
   return [labels[num] || String(num), 'Tier'];
 };
 
-export default function TierTimeline({ data, isLoading }: TierTimelineProps) {
+function formatMonthKey(monthKey: string): string {
+  const parts = monthKey.split('-');
+  if (parts.length === 2) {
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    return MONTH_NAMES[monthIdx] || monthKey;
+  }
+  return monthKey;
+}
+
+export default function TierTimeline() {
+  const { data, isLoading, isError, refetch } = useGetTierHistoryQuery();
+
   if (isLoading) {
     return (
       <Card>
@@ -71,8 +48,23 @@ export default function TierTimeline({ data, isLoading }: TierTimelineProps) {
     );
   }
 
-  const tierHistory = data && data.length > 0 ? data : getMockTierHistory();
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader title="Tier History" />
+        <Box sx={{ p: 3 }}>
+          <Alert
+            severity="error"
+            action={<Button color="inherit" size="small" onClick={refetch}>Retry</Button>}
+          >
+            Failed to load tier history.
+          </Alert>
+        </Box>
+      </Card>
+    );
+  }
 
+  const tierHistory = data?.tierHistory;
   if (!tierHistory || tierHistory.length === 0) {
     return (
       <Card>
@@ -87,12 +79,17 @@ export default function TierTimeline({ data, isLoading }: TierTimelineProps) {
     );
   }
 
+  const chartData = [...tierHistory].reverse().map((entry) => ({
+    monthKey: formatMonthKey(entry.monthKey),
+    tier: entry.tier,
+  }));
+
   return (
     <Card>
       <CardHeader title="Tier History" />
       <Box sx={{ p: 3, pt: 0 }}>
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={tierHistory} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="tierGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#6C63FF" stopOpacity={0.3} />
