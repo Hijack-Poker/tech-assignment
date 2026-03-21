@@ -1,13 +1,13 @@
 'use strict';
 
+const crypto = require('crypto');
+
 /**
  * Sleep for a given number of milliseconds.
  */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-const crypto = require('crypto');
 
 function uuid() {
   return crypto.randomUUID();
