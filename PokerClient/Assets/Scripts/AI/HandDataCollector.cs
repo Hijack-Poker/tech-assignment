@@ -151,6 +151,7 @@ namespace HijackPoker.AI
         private readonly HashSet<int> _vpipPlayers = new();
         private readonly HashSet<int> _pfrPlayers = new();
         private int _highestBettingRound = -1;
+        private float _peakPot;
 
         private void Awake() => _stateManager = FindObjectOfType<TableStateManager>();
 
@@ -193,6 +194,10 @@ namespace HijackPoker.AI
                 _currentGameNo = gameNo;
                 BeginHandTracking(state);
             }
+
+            // Track peak pot (before it gets paid out and resets to 0)
+            if (state.Game.Pot > _peakPot)
+                _peakPot = state.Game.Pot;
 
             // Capture actions during betting rounds
             if (PokerConstants.IsBettingStep(step))
@@ -241,6 +246,7 @@ namespace HijackPoker.AI
             _vpipPlayers.Clear();
             _pfrPlayers.Clear();
             _highestBettingRound = -1;
+            _peakPot = 0f;
 
             _currentDealerSeat = state.Game.DealerSeat;
             _currentSBSeat = state.Game.SmallBlindSeat;
@@ -329,7 +335,7 @@ namespace HijackPoker.AI
                 DealerSeat = _currentDealerSeat,
                 SmallBlindSeat = _currentSBSeat,
                 BigBlindSeat = _currentBBSeat,
-                Pot = state.Game.Pot,
+                Pot = _peakPot > 0 ? _peakPot : state.Game.Pot,
                 BigBlind = _currentBigBlind > 0 ? _currentBigBlind : 2f,
                 CommunityCards = state.Game.CommunityCards != null ? new List<string>(state.Game.CommunityCards) : new(),
                 ReachedShowdown = showdownCount >= 2 && state.Game.HandStep >= 12,
