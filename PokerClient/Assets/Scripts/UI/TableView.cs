@@ -922,7 +922,10 @@ namespace HijackPoker.UI
             if (_celebratedGameNo == state.Game.GameNo) return;
 
             _celebratedGameNo = state.Game.GameNo;
-            StartWinnerCelebration(winners);
+
+            // Play crowd clap sound only, no visual celebration
+            if (_sfxAudioSource != null && _crowdClapSound != null)
+                _sfxAudioSource.PlayOneShot(_crowdClapSound);
         }
 
         private void StartWinnerCelebration(List<PlayerState> winners)

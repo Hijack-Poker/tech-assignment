@@ -66,6 +66,16 @@ namespace HijackPoker.Api
         }
 
         /// <summary>
+        /// Wipe all game history and restart with fresh buy-in stacks.
+        /// POST /table/{tableId}/fresh-reset → ResetResponse
+        /// </summary>
+        public async Task<bool> FreshResetTableAsync(int tableId)
+        {
+            var result = await SendPostRequest<ResetResponse>($"/table/{tableId}/fresh-reset", new { });
+            return result != null && result.Success;
+        }
+
+        /// <summary>
         /// Check connection to the backend with retries.
         /// </summary>
         public async Task<bool> CheckConnectionAsync(int maxRetries = 3)

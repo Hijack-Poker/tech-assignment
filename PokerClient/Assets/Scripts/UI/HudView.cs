@@ -20,6 +20,7 @@ namespace HijackPoker.UI
         [SerializeField] private Image _potChipImage;
         [SerializeField] private Button _exitButton;
 
+        private Button _restartButton;
         private float _displayedPot;
 
         private void Awake()
@@ -31,6 +32,8 @@ namespace HijackPoker.UI
             }
             if (_exitButton != null)
                 _exitButton.onClick.AddListener(OnExitClicked);
+
+            CreateRestartButton();
         }
 
         private void OnEnable() => _stateManager.OnTableStateChanged += OnStateChanged;
@@ -65,6 +68,51 @@ namespace HijackPoker.UI
             {
                 _actionText.gameObject.SetActive(false);
             }
+        }
+
+        private void CreateRestartButton()
+        {
+            if (_exitButton == null) return;
+
+            var exitRt = _exitButton.GetComponent<RectTransform>();
+
+            // Create restart button as sibling, positioned to the left of exit
+            var go = new GameObject("RestartBtn", typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(exitRt.parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = exitRt.anchorMin;
+            rt.anchorMax = exitRt.anchorMax;
+            rt.pivot = exitRt.pivot;
+            rt.sizeDelta = new Vector2(90f, exitRt.sizeDelta.y);
+            // Place to the left of exit button with 8px gap
+            rt.anchoredPosition = exitRt.anchoredPosition + new Vector2(-(exitRt.sizeDelta.x + 8f), 0f);
+
+            var img = go.GetComponent<Image>();
+            img.color = new Color(0.75f, 0.22f, 0.17f);
+
+            var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            txtGO.transform.SetParent(go.transform, false);
+            var txtRt = txtGO.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero;
+            txtRt.offsetMax = Vector2.zero;
+            var txt = txtGO.GetComponent<TextMeshProUGUI>();
+            txt.text = "RESTART";
+            txt.fontSize = 14;
+            txt.fontStyle = FontStyles.Bold;
+            txt.alignment = TextAlignmentOptions.Center;
+            txt.color = Color.white;
+
+            _restartButton = go.GetComponent<Button>();
+            _restartButton.onClick.AddListener(OnRestartClicked);
+        }
+
+        private void OnRestartClicked()
+        {
+            if (_gameManager == null) return;
+            _ = _gameManager.FreshRestartAsync();
         }
 
         private void OnExitClicked()

@@ -112,6 +112,47 @@ namespace HijackPoker.Managers
             }
         }
 
+        public async Task FreshRestartAsync()
+        {
+            if (_isProcessing) return;
+            _isProcessing = true;
+
+            try
+            {
+                StopAutoPlay();
+
+                bool ok = await _apiClient.FreshResetTableAsync(_tableId);
+                if (!ok)
+                {
+                    _stateManager.NotifyConnectionStatus("Error: Fresh reset failed");
+                    return;
+                }
+
+                // Advance until we reach blind posting (step 2)
+                HijackPoker.Models.TableResponse lastState = null;
+                for (int i = 0; i < 30; i++)
+                {
+                    await _apiClient.ProcessStepAsync(_tableId);
+                    var check = await _apiClient.GetTableStateAsync(_tableId);
+                    if (check != null) lastState = check;
+                    if (check != null && check.Game.HandStep == 2)
+                    {
+                        _stateManager.SetState(check);
+                        break;
+                    }
+                }
+
+                if (_stateManager.CurrentState == null && lastState != null)
+                    _stateManager.SetState(lastState);
+
+                _stateManager.NotifyConnectionStatus("Connected");
+            }
+            finally
+            {
+                _isProcessing = false;
+            }
+        }
+
         public void ToggleAutoPlay()
         {
             if (IsAutoPlaying) StopAutoPlay();

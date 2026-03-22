@@ -1,7 +1,7 @@
 'use strict';
 
 const { processTable } = require('./lib/process-table');
-const { fetchTable, resetTable } = require('./lib/table-fetcher');
+const { fetchTable, resetTable, freshResetTable } = require('./lib/table-fetcher');
 const { logger } = require('./shared/config/logger');
 
 const CORS_HEADERS = {
@@ -181,6 +181,46 @@ async function resetTableHttp(event) {
 }
 
 /**
+ * POST /table/{tableId}/fresh-reset — wipe all game history and start fresh with initial stacks.
+ */
+async function freshResetTableHttp(event) {
+  try {
+    const tableId = event.pathParameters?.tableId || JSON.parse(event.body || '{}').tableId;
+
+    if (!tableId) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId is required' }),
+      };
+    }
+
+    const table = await freshResetTable(tableId);
+
+    if (!table) {
+      return {
+        statusCode: 404,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Table not found' }),
+      };
+    }
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, gameNo: table.game.gameNo }),
+    };
+  } catch (err) {
+    logger.error(`Fresh reset table error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
  * Health check endpoint.
  */
 async function health() {
@@ -195,4 +235,4 @@ async function health() {
   };
 }
 
-module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, health };
+module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, freshResetTableHttp, health };

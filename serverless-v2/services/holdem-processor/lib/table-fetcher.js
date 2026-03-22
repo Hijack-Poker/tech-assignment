@@ -335,4 +335,29 @@ async function resetTable(tableId) {
   }
 }
 
-module.exports = { fetchTable, saveGame, savePlayers, resetTable };
+/**
+ * Fresh-reset table — delete ALL game history and create a brand-new game
+ * with fresh buy-in stacks so every player starts from scratch.
+ */
+async function freshResetTable(tableId) {
+  try {
+    // Delete all game_players and games for this table
+    await sequelize.query(
+      `DELETE gp FROM game_players gp JOIN games g ON gp.game_id = g.id WHERE g.table_id = :tableId`,
+      { replacements: { tableId }, type: QueryTypes.DELETE }
+    );
+    await sequelize.query(
+      `DELETE FROM games WHERE table_id = :tableId`,
+      { replacements: { tableId }, type: QueryTypes.DELETE }
+    );
+
+    // Now createNewGame will find no previous completed games
+    // and will allocate fresh buy-in stacks for all players
+    return await createNewGame(tableId);
+  } catch (err) {
+    logger.error(`Failed to fresh-reset table ${tableId}: ${err.message}`);
+    throw err;
+  }
+}
+
+module.exports = { fetchTable, saveGame, savePlayers, resetTable, freshResetTable };

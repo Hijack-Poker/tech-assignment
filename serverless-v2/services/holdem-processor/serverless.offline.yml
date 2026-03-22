@@ -62,6 +62,13 @@ functions:
           path: /table/{tableId}/reset
           method: POST
 
+  freshResetTable:
+    handler: handler.freshResetTableHttp
+    events:
+      - httpApi:
+          path: /table/{tableId}/fresh-reset
+          method: POST
+
 plugins:
   - serverless-offline
 
