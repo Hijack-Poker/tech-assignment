@@ -31,7 +31,7 @@ async function publishTableUpdate(tableId, game, players) {
   const eventBusName = process.env.EVENT_BUS_NAME || 'poker-events';
 
   const detail = {
-    gameType: 'texas',
+    gameType: game.gameType || 'texas',
     tableId,
     timestamp: Date.now(),
     hasFullData: true,

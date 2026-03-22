@@ -123,6 +123,7 @@ async function getTableHttp(event) {
           action: p.action,
           cards: p.cards,
           handRank: p.handRank,
+          lowHandRank: p.lowHandRank,
           winnings: p.winnings,
         })),
       }),
