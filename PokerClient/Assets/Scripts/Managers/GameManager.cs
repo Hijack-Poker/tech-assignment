@@ -32,6 +32,7 @@ namespace HijackPoker.Managers
         private Coroutine _autoPlayCoroutine;
         private bool _hasRaisedThisRound;
         private int _lastBettingStep = -1;
+        private HijackPoker.Api.WebSocketClient _wsClient;
 
         public static readonly float[] SpeedOptions = { 0.25f, 0.5f, 1f, 2f };
 
@@ -45,6 +46,7 @@ namespace HijackPoker.Managers
         private async void Start()
         {
             PlayerName = PlayerPrefs.GetString("PlayerName", "Player");
+            _tableId = PlayerPrefs.GetInt("TableId", _tableId);
 
             bool connected = await _apiClient.CheckConnectionAsync(maxRetries: 3);
 
@@ -70,11 +72,33 @@ namespace HijackPoker.Managers
 
                 if (_stateManager.CurrentState == null && lastState != null)
                     _stateManager.SetState(lastState);
+
+                // Start WebSocket for real-time updates (falls back gracefully)
+                ConnectWebSocket();
             }
             else
             {
                 _stateManager.NotifyConnectionStatus("Error: Cannot reach holdem-processor at localhost:3030");
             }
+        }
+
+        private void ConnectWebSocket()
+        {
+            _wsClient = gameObject.GetComponent<HijackPoker.Api.WebSocketClient>();
+            if (_wsClient == null)
+                _wsClient = gameObject.AddComponent<HijackPoker.Api.WebSocketClient>();
+
+            _wsClient.OnTableUpdate += OnWebSocketTableUpdate;
+            _wsClient.Connect(_tableId);
+        }
+
+        private async void OnWebSocketTableUpdate(int tableId)
+        {
+            if (tableId != _tableId || _isProcessing) return;
+
+            var state = await _apiClient.GetTableStateAsync(_tableId);
+            if (state != null)
+                _stateManager.SetState(state);
         }
 
         public async Task AdvanceStepAsync(string action = null, float amount = 0f)
@@ -120,6 +144,8 @@ namespace HijackPoker.Managers
             try
             {
                 StopAutoPlay();
+
+                _stateManager.NotifyTableReset();
 
                 bool ok = await _apiClient.FreshResetTableAsync(_tableId);
                 if (!ok)
@@ -312,6 +338,11 @@ namespace HijackPoker.Managers
         private void OnDestroy()
         {
             StopAutoPlay();
+            if (_wsClient != null)
+            {
+                _wsClient.OnTableUpdate -= OnWebSocketTableUpdate;
+                _wsClient.Disconnect();
+            }
         }
     }
 }

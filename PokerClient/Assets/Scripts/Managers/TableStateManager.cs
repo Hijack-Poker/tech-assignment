@@ -10,6 +10,7 @@ namespace HijackPoker.Managers
 
         public event Action<TableResponse> OnTableStateChanged;
         public event Action<string> OnConnectionStatusChanged;
+        public event Action OnTableReset;
 
         private static readonly string[] StepLabels = {
             "Preparing Hand",
@@ -41,6 +42,11 @@ namespace HijackPoker.Managers
             if (step >= 0 && step < StepLabels.Length)
                 return StepLabels[step];
             return $"Step {step}";
+        }
+
+        public void NotifyTableReset()
+        {
+            OnTableReset?.Invoke();
         }
 
         public void NotifyConnectionStatus(string status)

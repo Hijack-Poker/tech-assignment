@@ -22,7 +22,7 @@ namespace HijackPoker.Api
     public class PokerApiClient : MonoBehaviour
     {
         [Header("API Configuration")]
-        [SerializeField] private string baseUrl = "http://localhost:3030";
+        [SerializeField] private string baseUrl = "https://hijack-poker.fly.dev";
         [SerializeField] private float timeoutSeconds = 10f;
 
         /// <summary>
@@ -72,6 +72,16 @@ namespace HijackPoker.Api
         public async Task<bool> FreshResetTableAsync(int tableId)
         {
             var result = await SendPostRequest<ResetResponse>($"/table/{tableId}/fresh-reset", new { });
+            return result != null && result.Success;
+        }
+
+        /// <summary>
+        /// Tip the dealer — deduct $1 from a player's stack.
+        /// POST /table/{tableId}/tip { seat } → ResetResponse
+        /// </summary>
+        public async Task<bool> TipDealerAsync(int tableId, int seat)
+        {
+            var result = await SendPostRequest<ResetResponse>($"/table/{tableId}/tip", new { seat });
             return result != null && result.Success;
         }
 

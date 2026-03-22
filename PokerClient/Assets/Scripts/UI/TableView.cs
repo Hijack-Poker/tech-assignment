@@ -93,6 +93,10 @@ namespace HijackPoker.UI
         // Card back sprite for deal animation
         private Sprite _cardBackSprite;
 
+        // Tip button
+        private Button _tipButton;
+        private TextMeshProUGUI _tipFloatText;
+
         private void Awake()
         {
             _allAvatars = Resources.LoadAll<Sprite>("Avatars");
@@ -107,19 +111,34 @@ namespace HijackPoker.UI
             EnsureAudioRefs();
             TryResolveTurnStartSound();
             TryResolveDealAndFoldSounds();
+            CreateTipButton();
             SetLoadingVisible(true, immediate: true);
         }
 
         private void OnEnable()
         {
             _stateManager.OnTableStateChanged += OnStateChanged;
+            _stateManager.OnTableReset += OnTableReset;
 
             // Ensure ShowdownView exists
             if (GetComponent<ShowdownView>() == null)
                 gameObject.AddComponent<ShowdownView>();
         }
 
-        private void OnDisable() => _stateManager.OnTableStateChanged -= OnStateChanged;
+        private void OnDisable()
+        {
+            _stateManager.OnTableStateChanged -= OnStateChanged;
+            _stateManager.OnTableReset -= OnTableReset;
+        }
+
+        private void OnTableReset()
+        {
+            // Reset tracking so the next SetState sees a "new hand" and triggers shuffle
+            _prevGameNo = -1;
+            _prevHandStep = -1;
+            _celebratedGameNo = -1;
+            _isFirstState = false;
+        }
 
         private void AssignAvatars(List<PlayerState> players, string localPlayerName)
         {
@@ -171,6 +190,9 @@ namespace HijackPoker.UI
                 _hasPlayedDealThisHand = false;
                 _prevFoldedSeats.Clear();
                 HideWinnerCelebration();
+
+                // Play shuffle animation on new hand (including first load)
+                StartCoroutine(AnimateShuffleAtDealer());
             }
 
             // ── 1. CHIP FLY ANIMATION (bet increases) ──
@@ -389,6 +411,262 @@ namespace HijackPoker.UI
             seq.Join(DOTween.To(() => rt.sizeDelta, v => rt.sizeDelta = v, new Vector2(20, 20), 0.45f).SetEase(Ease.InQuad));
             seq.Join(DOTween.ToAlpha(() => img.color, c => img.color = c, 0f, 0.1f).SetDelay(0.35f));
             seq.OnComplete(() => Destroy(chipGO));
+        }
+
+        // ══════ TIP BUTTON ══════
+        private void CreateTipButton()
+        {
+            // We need _dealerSource to position the button; defer if not ready
+            StartCoroutine(CreateTipButtonDeferred());
+        }
+
+        private IEnumerator CreateTipButtonDeferred()
+        {
+            // Wait until dealerSource is resolved
+            while (_dealerSource == null)
+            {
+                EnsureAnimationRefs();
+                yield return null;
+            }
+
+            var canvas = GetComponentInParent<Canvas>();
+            Transform parent = canvas != null ? canvas.transform : transform;
+
+            var go = new GameObject("TipButton", typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            // Position below the dealer
+            rt.position = _dealerSource.position;
+            rt.anchoredPosition += new Vector2(0f, -50f);
+            rt.sizeDelta = new Vector2(72f, 30f);
+
+            var img = go.GetComponent<Image>();
+            img.color = new Color(0.18f, 0.55f, 0.22f, 0.9f);
+
+            // Label
+            var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            txtGO.transform.SetParent(go.transform, false);
+            var txtRt = txtGO.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero;
+            txtRt.offsetMax = Vector2.zero;
+            var txt = txtGO.GetComponent<TextMeshProUGUI>();
+            txt.text = "TIP $1";
+            txt.fontSize = 13;
+            txt.fontStyle = FontStyles.Bold;
+            txt.alignment = TextAlignmentOptions.Center;
+            txt.color = Color.white;
+
+            _tipButton = go.GetComponent<Button>();
+            _tipButton.onClick.AddListener(OnTipClicked);
+        }
+
+        private bool _isTipping;
+
+        private async void OnTipClicked()
+        {
+            if (_isTipping) return;
+            var state = _gameManager?.CurrentState;
+            if (state?.Game == null || state.Players == null) return;
+
+            // Find the acting player (whose turn it is), or default to local seat
+            int actingSeat = state.Game.Move > 0 ? state.Game.Move : _localSeat;
+            var actor = state.Players.Find(p => p.Seat == actingSeat);
+            if (actor == null || actor.Stack < 1f) return;
+
+            _isTipping = true;
+
+            // Animate chip from acting seat to dealer
+            int viewIdx = SeatToViewIndex(actingSeat);
+            if (viewIdx >= 0 && viewIdx < _seatViews.Length)
+                AnimateTipChip(_seatViews[viewIdx]);
+
+            // Deduct $1 on the backend
+            var apiClient = FindObjectOfType<HijackPoker.Api.PokerApiClient>();
+            if (apiClient != null)
+            {
+                await apiClient.TipDealerAsync(state.Game.TableId, actingSeat);
+                // Refresh state so the stack updates on screen
+                var updated = await apiClient.GetTableStateAsync(state.Game.TableId);
+                if (updated != null)
+                    _stateManager.SetState(updated);
+            }
+
+            _isTipping = false;
+        }
+
+        private void AnimateTipChip(SeatView seat)
+        {
+            if (_animLayer == null || _dealerSource == null || _chipFlySprite == null) return;
+            PlayChipBetSound();
+
+            var chipGO = new GameObject("TipChip", typeof(RectTransform));
+            chipGO.transform.SetParent(_animLayer, false);
+            var img = chipGO.AddComponent<Image>();
+            img.sprite = _chipFlySprite;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+
+            var rt = chipGO.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(28, 28);
+            chipGO.transform.position = seat.transform.position;
+
+            // Fly to dealer
+            var seq = DOTween.Sequence();
+            seq.Append(chipGO.transform.DOMove(_dealerSource.position, 0.5f).SetEase(Ease.InOutCubic));
+            seq.Join(DOTween.To(() => rt.sizeDelta, v => rt.sizeDelta = v, new Vector2(18, 18), 0.5f).SetEase(Ease.InQuad));
+            seq.Join(DOTween.ToAlpha(() => img.color, c => img.color = c, 0f, 0.12f).SetDelay(0.38f));
+            seq.OnComplete(() =>
+            {
+                Destroy(chipGO);
+                ShowTipFloat();
+            });
+        }
+
+        private void ShowTipFloat()
+        {
+            if (_dealerSource == null) return;
+
+            var canvas = GetComponentInParent<Canvas>();
+            Transform parent = canvas != null ? canvas.transform : transform;
+
+            var go = new GameObject("TipFloat", typeof(RectTransform), typeof(TextMeshProUGUI));
+            go.transform.SetParent(parent, false);
+            go.transform.position = _dealerSource.position;
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(80, 30);
+
+            var txt = go.GetComponent<TextMeshProUGUI>();
+            txt.text = "+$1";
+            txt.fontSize = 20;
+            txt.fontStyle = FontStyles.Bold;
+            txt.alignment = TextAlignmentOptions.Center;
+            txt.color = new Color(0.29f, 0.87f, 0.42f);
+            txt.raycastTarget = false;
+
+            // Float upward and fade
+            float targetY = rt.anchoredPosition.y + 40f;
+            var seq = DOTween.Sequence();
+            seq.Append(DOTween.To(() => rt.anchoredPosition, v => rt.anchoredPosition = v,
+                new Vector2(rt.anchoredPosition.x, targetY), 0.8f).SetEase(Ease.OutCubic));
+            seq.Join(DOTween.ToAlpha(() => txt.color, c => txt.color = c, 0f, 0.3f).SetDelay(0.5f));
+            seq.OnComplete(() => Destroy(go));
+        }
+
+        // ══════ SHUFFLE ANIMATION ══════
+        private IEnumerator AnimateShuffleAtDealer()
+        {
+            EnsureAnimationRefs();
+            if (_animLayer == null || _cardBackSprite == null) yield break;
+
+            Vector3 dealerPos = _dealerSource != null
+                ? _dealerSource.position
+                : transform.position + new Vector3(0f, 180f, 0f);
+
+            PlayDealShuffleSound();
+
+            const int cardCount = 8;
+            const float spreadX = 24f;
+            const float splitDuration = 0.28f;
+            const float mergeDuration = 0.22f;
+            var cards = new List<GameObject>();
+
+            // Create card backs at dealer, starting small (grow-in effect)
+            for (int i = 0; i < cardCount; i++)
+            {
+                var go = new GameObject($"ShuffleCard_{i}", typeof(RectTransform));
+                go.transform.SetParent(_animLayer, false);
+                var img = go.AddComponent<Image>();
+                img.sprite = _cardBackSprite;
+                img.preserveAspect = true;
+                img.raycastTarget = false;
+                img.color = new Color(1f, 1f, 1f, 0f);
+
+                var rt = go.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(42, 58);
+                go.transform.position = dealerPos;
+                go.transform.localScale = Vector3.zero;
+                rt.localRotation = Quaternion.Euler(0f, 0f, (i - cardCount / 2f) * 5f);
+
+                cards.Add(go);
+            }
+
+            // Phase 1: Grow in — cards scale up from 0 with stagger, fan out
+            {
+                var growSeq = DOTween.Sequence();
+                for (int i = 0; i < cardCount; i++)
+                {
+                    var go = cards[i];
+                    var img = go.GetComponent<Image>();
+                    float delay = i * 0.04f;
+                    growSeq.Insert(delay, go.transform.DOScale(1.15f, 0.3f).SetEase(Ease.OutBack));
+                    growSeq.Insert(delay, DOTween.ToAlpha(() => img.color, c => img.color = c, 1f, 0.15f));
+                }
+                // Settle to normal scale
+                growSeq.Append(DOTween.Sequence()); // noop spacer
+                for (int i = 0; i < cardCount; i++)
+                    growSeq.Join(cards[i].transform.DOScale(1f, 0.15f).SetEase(Ease.InOutQuad));
+
+                yield return growSeq.WaitForCompletion();
+            }
+
+            // Phase 2: Hold briefly so the deck is visible
+            yield return new WaitForSeconds(0.25f);
+
+            // Phase 3: Riffle shuffle — 3 rounds
+            int half = cardCount / 2;
+            for (int round = 0; round < 3; round++)
+            {
+                var seq = DOTween.Sequence();
+                // Split apart
+                for (int i = 0; i < cardCount; i++)
+                {
+                    var rt = cards[i].GetComponent<RectTransform>();
+                    float dir = i < half ? -1f : 1f;
+                    Vector3 splitTarget = dealerPos + new Vector3(dir * spreadX, 0f, 0f);
+                    seq.Join(cards[i].transform.DOMove(splitTarget, splitDuration).SetEase(Ease.OutQuad));
+                    seq.Join(rt.DOLocalRotate(new Vector3(0f, 0f, dir * 10f), splitDuration).SetEase(Ease.OutQuad));
+                }
+                // Brief pause
+                seq.AppendInterval(0.05f);
+                // Merge back
+                for (int i = 0; i < cardCount; i++)
+                {
+                    var rt = cards[i].GetComponent<RectTransform>();
+                    seq.Join(cards[i].transform.DOMove(dealerPos, mergeDuration).SetEase(Ease.InQuad));
+                    seq.Join(rt.DOLocalRotate(new Vector3(0f, 0f, (i - cardCount / 2f) * 5f), mergeDuration).SetEase(Ease.InQuad));
+                }
+                // Slight pop on merge
+                for (int i = 0; i < cardCount; i++)
+                    seq.Join(cards[i].transform.DOPunchScale(Vector3.one * 0.08f, 0.15f, 6, 0.5f));
+
+                yield return seq.WaitForCompletion();
+
+                if (round < 2)
+                    yield return new WaitForSeconds(0.08f);
+            }
+
+            // Phase 4: Hold the neat stack a moment
+            yield return new WaitForSeconds(0.3f);
+
+            // Phase 5: Fade out and cleanup
+            var fadeSeq = DOTween.Sequence();
+            foreach (var go in cards)
+            {
+                var img = go.GetComponent<Image>();
+                fadeSeq.Join(DOTween.ToAlpha(() => img.color, c => img.color = c, 0f, 0.25f));
+                fadeSeq.Join(go.transform.DOScale(0.7f, 0.25f).SetEase(Ease.InQuad));
+            }
+            yield return fadeSeq.WaitForCompletion();
+
+            foreach (var go in cards)
+                Destroy(go);
         }
 
         // ══════ CARD DEAL ANIMATION ══════
@@ -754,106 +1032,19 @@ namespace HijackPoker.UI
             }
 
             if (_turnStartSound == null)
-                StartCoroutine(LoadTurnStartSoundFromProjectPath());
+                _turnStartSound = Resources.Load<AudioClip>("Audio/win_01");
             if (_timeRemainingSound == null)
-                StartCoroutine(LoadTimeRemainingSoundFromProjectPath());
-        }
-
-        private IEnumerator LoadTurnStartSoundFromProjectPath()
-        {
-            string clipPath = Path.Combine(Application.dataPath, "uVegas/Audio/UI/win_01.wav");
-            if (!File.Exists(clipPath))
-                yield break;
-
-            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-                _turnStartSound = DownloadHandlerAudioClip.GetContent(request);
-        }
-
-        private IEnumerator LoadTimeRemainingSoundFromProjectPath()
-        {
-            string[] candidates =
-            {
-                Path.Combine(Application.dataPath, "uVegas/Audio/UI/time_remmaining.wav"),
-                Path.Combine(Application.dataPath, "uVegas/Audio/UI/time_remaning.wav"),
-                Path.Combine(Application.dataPath, "uVegas/Audio/UI/time_remaining.wav")
-            };
-
-            string clipPath = candidates.FirstOrDefault(File.Exists);
-            if (string.IsNullOrEmpty(clipPath))
-                yield break;
-
-            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-                _timeRemainingSound = DownloadHandlerAudioClip.GetContent(request);
+                _timeRemainingSound = Resources.Load<AudioClip>("Audio/time_remaning");
         }
 
         private void TryResolveDealAndFoldSounds()
         {
             if (_dealShuffleSound == null)
-                StartCoroutine(LoadDealShuffleSoundFromProjectPath());
+                _dealShuffleSound = Resources.Load<AudioClip>("Audio/card_shuffle_custom");
             if (_foldSound == null)
-                StartCoroutine(LoadFoldSoundFromProjectPath());
-            // Always override with the dedicated chips.wav so inspector leftovers
-            // or older runtime-loaded clips don't keep playing.
-            StartCoroutine(LoadChipBetSoundFromProjectPath());
-            StartCoroutine(LoadCrowdClapSound());
-        }
-
-        private IEnumerator LoadDealShuffleSoundFromProjectPath()
-        {
-            string clipPath = Path.Combine(Application.dataPath, "Audio/Custom/card_shuffle_custom.wav");
-            if (!File.Exists(clipPath))
-                yield break;
-
-            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-                _dealShuffleSound = DownloadHandlerAudioClip.GetContent(request);
-        }
-
-        private IEnumerator LoadFoldSoundFromProjectPath()
-        {
-            string clipPath = Path.Combine(Application.dataPath, "uVegas/Audio/UI/hover_01.wav");
-            if (!File.Exists(clipPath))
-                yield break;
-
-            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-                _foldSound = DownloadHandlerAudioClip.GetContent(request);
-        }
-
-        private IEnumerator LoadChipBetSoundFromProjectPath()
-        {
-            string clipPath = Path.Combine(Application.dataPath, "uVegas/Audio/UI/chips.wav");
-            if (!File.Exists(clipPath))
-                yield break;
-
-            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-                _chipBetSound = DownloadHandlerAudioClip.GetContent(request);
-        }
-
-        private IEnumerator LoadCrowdClapSound()
-        {
-            string clipPath = Path.Combine(Application.dataPath, "uVegas/Audio/UI/crowd-clap.wav");
-            if (!File.Exists(clipPath))
-                yield break;
-
-            using var request = UnityWebRequestMultimedia.GetAudioClip($"file://{clipPath}", AudioType.WAV);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-                _crowdClapSound = DownloadHandlerAudioClip.GetContent(request);
+                _foldSound = Resources.Load<AudioClip>("Audio/hover_01");
+            _chipBetSound = Resources.Load<AudioClip>("Audio/chips");
+            _crowdClapSound = Resources.Load<AudioClip>("Audio/crowd-clap");
         }
 
         private void PlayTurnStartSound()

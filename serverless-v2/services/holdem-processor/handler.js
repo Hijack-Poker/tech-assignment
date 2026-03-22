@@ -1,7 +1,7 @@
 'use strict';
 
 const { processTable } = require('./lib/process-table');
-const { fetchTable, resetTable, freshResetTable } = require('./lib/table-fetcher');
+const { fetchTable, resetTable, freshResetTable, tipDealer } = require('./lib/table-fetcher');
 const { logger } = require('./shared/config/logger');
 
 const CORS_HEADERS = {
@@ -221,6 +221,40 @@ async function freshResetTableHttp(event) {
 }
 
 /**
+ * POST /table/{tableId}/tip — deduct $1 from a player's stack as a dealer tip.
+ */
+async function tipDealerHttp(event) {
+  try {
+    const tableId = event.pathParameters?.tableId;
+    const body = JSON.parse(event.body || '{}');
+    const seat = body.seat;
+
+    if (!tableId || !seat) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId and seat are required' }),
+      };
+    }
+
+    const result = await tipDealer(tableId, seat);
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true }),
+    };
+  } catch (err) {
+    logger.error(`Tip dealer error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
  * Health check endpoint.
  */
 async function health() {
@@ -235,4 +269,4 @@ async function health() {
   };
 }
 
-module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, freshResetTableHttp, health };
+module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, freshResetTableHttp, tipDealerHttp, health };

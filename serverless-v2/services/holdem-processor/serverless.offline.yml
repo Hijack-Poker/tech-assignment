@@ -69,6 +69,13 @@ functions:
           path: /table/{tableId}/fresh-reset
           method: POST
 
+  tipDealer:
+    handler: handler.tipDealerHttp
+    events:
+      - httpApi:
+          path: /table/{tableId}/tip
+          method: POST
+
 plugins:
   - serverless-offline
 

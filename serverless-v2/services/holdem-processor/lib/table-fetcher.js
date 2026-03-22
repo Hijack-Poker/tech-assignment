@@ -343,7 +343,7 @@ async function freshResetTable(tableId) {
   try {
     // Delete all game_players and games for this table
     await sequelize.query(
-      `DELETE gp FROM game_players gp JOIN games g ON gp.game_id = g.id WHERE g.table_id = :tableId`,
+      `DELETE FROM game_players WHERE game_id IN (SELECT id FROM games WHERE table_id = :tableId)`,
       { replacements: { tableId }, type: QueryTypes.DELETE }
     );
     await sequelize.query(
@@ -360,4 +360,27 @@ async function freshResetTable(tableId) {
   }
 }
 
-module.exports = { fetchTable, saveGame, savePlayers, resetTable, freshResetTable };
+/**
+ * Tip the dealer — deduct $1 from a player's stack in the current game.
+ */
+async function tipDealer(tableId, seat) {
+  try {
+    const [game] = await sequelize.query(
+      `SELECT id FROM games WHERE table_id = :tableId AND status = 'in_progress' ORDER BY game_no DESC LIMIT 1`,
+      { replacements: { tableId }, type: QueryTypes.SELECT }
+    );
+    if (!game) return null;
+
+    await sequelize.query(
+      `UPDATE game_players SET stack = stack - 1 WHERE game_id = :gameId AND seat = :seat AND stack >= 1`,
+      { replacements: { gameId: game.id, seat }, type: QueryTypes.UPDATE }
+    );
+
+    return { success: true };
+  } catch (err) {
+    logger.error(`Failed to tip dealer on table ${tableId}: ${err.message}`);
+    throw err;
+  }
+}
+
+module.exports = { fetchTable, saveGame, savePlayers, resetTable, freshResetTable, tipDealer };
