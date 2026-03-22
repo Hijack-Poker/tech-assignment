@@ -47,7 +47,9 @@ async function fetchTable(tableId) {
 }
 
 /**
- * Create a new game for a table with the seeded players.
+ * Create a new game for a table.
+ * Carries over stacks from the last completed game; busts players with $0.
+ * Falls back to fresh buy-ins if no previous game exists.
  */
 async function createNewGame(tableId) {
   try {
@@ -59,14 +61,62 @@ async function createNewGame(tableId) {
     if (!table) return null;
 
     const maxSeats = parseInt(table.max_seats, 10) || 6;
+    const minBuy = parseFloat(table.min_buy_in);
+    const maxBuy = parseFloat(table.max_buy_in);
 
-    // Get players (for skeleton, use the seeded players)
-    const allPlayers = await sequelize.query(
-      `SELECT * FROM players ORDER BY id LIMIT ${maxSeats}`,
-      { type: QueryTypes.SELECT }
+    // Try to carry over from the last completed game
+    const prevPlayers = await sequelize.query(
+      `SELECT gp.player_id, gp.seat, gp.stack, p.guid, p.username
+       FROM game_players gp
+       JOIN players p ON gp.player_id = p.id
+       JOIN games g ON gp.game_id = g.id
+       WHERE g.table_id = :tableId AND g.status = 'completed'
+       ORDER BY g.game_no DESC, gp.seat`,
+      { replacements: { tableId }, type: QueryTypes.SELECT }
     );
 
-    if (allPlayers.length < 2) return null;
+    // Group by game (take only the most recent completed game's players)
+    let carryOverPlayers = null;
+    if (prevPlayers.length > 0) {
+      // All rows from the query are from the latest completed game (ORDER BY game_no DESC)
+      // but we need to de-dup by seat in case of multiple completed games
+      const seen = new Set();
+      carryOverPlayers = [];
+      for (const p of prevPlayers) {
+        if (!seen.has(p.seat)) {
+          seen.add(p.seat);
+          carryOverPlayers.push(p);
+        }
+      }
+      // Filter out busted players (stack <= 0)
+      carryOverPlayers = carryOverPlayers.filter(p => parseFloat(p.stack) > 0);
+    }
+
+    // Fall back to fresh buy-ins if no previous game or not enough players
+    if (!carryOverPlayers || carryOverPlayers.length < 2) {
+      const allPlayers = await sequelize.query(
+        `SELECT * FROM players ORDER BY id LIMIT ${maxSeats}`,
+        { type: QueryTypes.SELECT }
+      );
+
+      if (allPlayers.length < 2) return null;
+
+      carryOverPlayers = allPlayers.map((p, i) => {
+        const stackOptions = [
+          maxBuy,
+          Math.round((minBuy + maxBuy) * 0.35),
+          Math.round((minBuy + maxBuy) * 0.75),
+          minBuy,
+          Math.round((minBuy + maxBuy) * 0.6),
+          Math.round((minBuy + maxBuy) * 0.5),
+        ];
+        return {
+          player_id: p.id,
+          seat: i + 1,
+          stack: stackOptions[i] || Math.round((minBuy + maxBuy) / 2),
+        };
+      });
+    }
 
     // Get next game number
     const [lastGame] = await sequelize.query(
@@ -75,17 +125,24 @@ async function createNewGame(tableId) {
     );
     const nextGameNo = lastGame?.next_no || 1;
 
-    // Insert game record
-    const [gameId] = await sequelize.query(
-      `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
-       VALUES (:tableId, :gameNo, 0, 1, 0, 'in_progress')`,
-      { replacements: { tableId, gameNo: nextGameNo }, type: QueryTypes.INSERT }
+    // Get dealer seat from last completed game to carry over rotation
+    const [lastCompleted] = await sequelize.query(
+      `SELECT dealer_seat FROM games WHERE table_id = :tableId AND status = 'completed' ORDER BY game_no DESC LIMIT 1`,
+      { replacements: { tableId }, type: QueryTypes.SELECT }
     );
+    const dealerSeat = lastCompleted ? lastCompleted.dealer_seat : 1;
 
-    // Insert game players
-    for (let i = 0; i < allPlayers.length; i++) {
-      const player = allPlayers[i];
-      const buyIn = (parseFloat(table.min_buy_in) + parseFloat(table.max_buy_in)) / 2;
+    // Insert game record
+    const isPostgres = sequelize.getDialect() === 'postgres';
+    const insertSql = `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
+       VALUES (:tableId, :gameNo, 0, :dealerSeat, 0, 'in_progress')${isPostgres ? ' RETURNING id' : ''}`;
+    const insertResult = await sequelize.query(insertSql,
+      { replacements: { tableId, gameNo: nextGameNo, dealerSeat }, type: QueryTypes.INSERT }
+    );
+    const gameId = isPostgres ? insertResult[0]?.[0]?.id : insertResult[0];
+
+    // Insert players with carried-over stacks
+    for (const p of carryOverPlayers) {
       await sequelize.query(
         `INSERT INTO game_players (game_id, table_id, player_id, seat, stack, status)
          VALUES (:gameId, :tableId, :playerId, :seat, :stack, '1')`,
@@ -93,9 +150,9 @@ async function createNewGame(tableId) {
           replacements: {
             gameId,
             tableId,
-            playerId: player.id,
-            seat: i + 1,
-            stack: buyIn,
+            playerId: p.player_id,
+            seat: p.seat,
+            stack: parseFloat(p.stack),
           },
           type: QueryTypes.INSERT,
         }
@@ -124,6 +181,7 @@ async function saveGame(game) {
         community_cards = :communityCards,
         deck = :deck,
         current_bet = :currentBet,
+        last_raise_size = :lastRaiseSize,
         winners = :winners,
         pot = :pot,
         side_pots = :sidePots,
@@ -140,6 +198,7 @@ async function saveGame(game) {
           communityCards: JSON.stringify(game.communityCards || []),
           deck: JSON.stringify(game.deck || []),
           currentBet: game.currentBet || 0,
+          lastRaiseSize: game.lastRaiseSize || 0,
           winners: JSON.stringify(game.winners || []),
           pot: game.pot,
           sidePots: JSON.stringify(game.sidePots || []),
@@ -169,7 +228,9 @@ async function savePlayers(players) {
           status = :status,
           action = :action,
           cards = :cards,
+          best_hand = :bestHand,
           hand_rank = :handRank,
+          is_winner = :isWinner,
           winnings = :winnings
          WHERE id = :id`,
         {
@@ -181,7 +242,9 @@ async function savePlayers(players) {
             status: player.status,
             action: player.action,
             cards: JSON.stringify(player.cards || []),
+            bestHand: JSON.stringify(player.bestHand || []),
             handRank: player.handRank || '',
+            isWinner: player.isWinner ? 1 : 0,
             winnings: player.winnings || 0,
           },
           type: QueryTypes.UPDATE,
@@ -222,9 +285,11 @@ function normalizeGame(row) {
       ? JSON.parse(row.deck || '[]')
       : (row.deck || []),
     currentBet: parseFloat(row.current_bet) || 0,
+    lastRaiseSize: parseFloat(row.last_raise_size) || 0,
     winners: typeof row.winners === 'string'
       ? JSON.parse(row.winners || '[]')
       : (row.winners || []),
+    noReopenSeats: [],
   };
 }
 
@@ -245,9 +310,80 @@ function normalizePlayer(row) {
     cards: typeof row.cards === 'string'
       ? JSON.parse(row.cards || '[]')
       : (row.cards || []),
+    bestHand: typeof row.best_hand === 'string'
+      ? JSON.parse(row.best_hand || '[]')
+      : (row.best_hand || []),
     handRank: row.hand_rank || '',
+    isWinner: row.is_winner === 1 || row.is_winner === '1',
     winnings: parseFloat(row.winnings) || 0,
   };
 }
 
-module.exports = { fetchTable, saveGame, savePlayers };
+/**
+ * Reset table — mark any in-progress game as completed and create a fresh one.
+ */
+async function resetTable(tableId) {
+  try {
+    // Mark all in-progress games for this table as completed
+    await sequelize.query(
+      `UPDATE games SET status = 'completed' WHERE table_id = :tableId AND status = 'in_progress'`,
+      { replacements: { tableId }, type: QueryTypes.UPDATE }
+    );
+
+    // Create a fresh game
+    return await createNewGame(tableId);
+  } catch (err) {
+    logger.error(`Failed to reset table ${tableId}: ${err.message}`);
+    throw err;
+  }
+}
+
+/**
+ * Fresh-reset table — delete ALL game history and create a brand-new game
+ * with fresh buy-in stacks so every player starts from scratch.
+ */
+async function freshResetTable(tableId) {
+  try {
+    // Delete all game_players and games for this table
+    await sequelize.query(
+      `DELETE FROM game_players WHERE game_id IN (SELECT id FROM games WHERE table_id = :tableId)`,
+      { replacements: { tableId }, type: QueryTypes.DELETE }
+    );
+    await sequelize.query(
+      `DELETE FROM games WHERE table_id = :tableId`,
+      { replacements: { tableId }, type: QueryTypes.DELETE }
+    );
+
+    // Now createNewGame will find no previous completed games
+    // and will allocate fresh buy-in stacks for all players
+    return await createNewGame(tableId);
+  } catch (err) {
+    logger.error(`Failed to fresh-reset table ${tableId}: ${err.message}`);
+    throw err;
+  }
+}
+
+/**
+ * Tip the dealer — deduct $1 from a player's stack in the current game.
+ */
+async function tipDealer(tableId, seat) {
+  try {
+    const [game] = await sequelize.query(
+      `SELECT id FROM games WHERE table_id = :tableId AND status = 'in_progress' ORDER BY game_no DESC LIMIT 1`,
+      { replacements: { tableId }, type: QueryTypes.SELECT }
+    );
+    if (!game) return null;
+
+    await sequelize.query(
+      `UPDATE game_players SET stack = stack - 1 WHERE game_id = :gameId AND seat = :seat AND stack >= 1`,
+      { replacements: { gameId: game.id, seat }, type: QueryTypes.UPDATE }
+    );
+
+    return { success: true };
+  } catch (err) {
+    logger.error(`Failed to tip dealer on table ${tableId}: ${err.message}`);
+    throw err;
+  }
+}
+
+module.exports = { fetchTable, saveGame, savePlayers, resetTable, freshResetTable, tipDealer };

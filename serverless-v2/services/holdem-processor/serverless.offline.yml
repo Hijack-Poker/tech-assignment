@@ -55,6 +55,27 @@ functions:
           path: /table/{tableId}
           method: GET
 
+  resetTable:
+    handler: handler.resetTableHttp
+    events:
+      - httpApi:
+          path: /table/{tableId}/reset
+          method: POST
+
+  freshResetTable:
+    handler: handler.freshResetTableHttp
+    events:
+      - httpApi:
+          path: /table/{tableId}/fresh-reset
+          method: POST
+
+  tipDealer:
+    handler: handler.tipDealerHttp
+    events:
+      - httpApi:
+          path: /table/{tableId}/tip
+          method: POST
+
 plugins:
   - serverless-offline
 

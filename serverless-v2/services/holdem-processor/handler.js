@@ -1,7 +1,7 @@
 'use strict';
 
 const { processTable } = require('./lib/process-table');
-const { fetchTable } = require('./lib/table-fetcher');
+const { fetchTable, resetTable, freshResetTable, tipDealer } = require('./lib/table-fetcher');
 const { logger } = require('./shared/config/logger');
 
 const CORS_HEADERS = {
@@ -46,7 +46,7 @@ async function handler(event) {
 async function processHandHttp(event) {
   try {
     const body = JSON.parse(event.body || '{}');
-    const { tableId } = body;
+    const { tableId, action, amount, seat } = body;
 
     if (!tableId) {
       return {
@@ -56,7 +56,8 @@ async function processHandHttp(event) {
       };
     }
 
-    const result = await processTable(tableId);
+    const actionRequest = action ? { action, amount, seat } : null;
+    const result = await processTable(tableId, actionRequest);
 
     return {
       statusCode: 200,
@@ -123,12 +124,128 @@ async function getTableHttp(event) {
           action: p.action,
           cards: p.cards,
           handRank: p.handRank,
+          bestHand: p.bestHand || [],
+          isWinner: p.isWinner || false,
           winnings: p.winnings,
         })),
       }),
     };
   } catch (err) {
     logger.error(`GET table error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
+ * POST /table/{tableId}/reset — reset table to a fresh game.
+ */
+async function resetTableHttp(event) {
+  try {
+    const tableId = event.pathParameters?.tableId || JSON.parse(event.body || '{}').tableId;
+
+    if (!tableId) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId is required' }),
+      };
+    }
+
+    const table = await resetTable(tableId);
+
+    if (!table) {
+      return {
+        statusCode: 404,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Table not found' }),
+      };
+    }
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, gameNo: table.game.gameNo }),
+    };
+  } catch (err) {
+    logger.error(`Reset table error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
+ * POST /table/{tableId}/fresh-reset — wipe all game history and start fresh with initial stacks.
+ */
+async function freshResetTableHttp(event) {
+  try {
+    const tableId = event.pathParameters?.tableId || JSON.parse(event.body || '{}').tableId;
+
+    if (!tableId) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId is required' }),
+      };
+    }
+
+    const table = await freshResetTable(tableId);
+
+    if (!table) {
+      return {
+        statusCode: 404,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Table not found' }),
+      };
+    }
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, gameNo: table.game.gameNo }),
+    };
+  } catch (err) {
+    logger.error(`Fresh reset table error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
+ * POST /table/{tableId}/tip — deduct $1 from a player's stack as a dealer tip.
+ */
+async function tipDealerHttp(event) {
+  try {
+    const tableId = event.pathParameters?.tableId;
+    const body = JSON.parse(event.body || '{}');
+    const seat = body.seat;
+
+    if (!tableId || !seat) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId and seat are required' }),
+      };
+    }
+
+    const result = await tipDealer(tableId, seat);
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true }),
+    };
+  } catch (err) {
+    logger.error(`Tip dealer error: ${err.message}`);
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
@@ -152,4 +269,4 @@ async function health() {
   };
 }
 
-module.exports = { handler, processHandHttp, getTableHttp, health };
+module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, freshResetTableHttp, tipDealerHttp, health };

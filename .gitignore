@@ -6,3 +6,37 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# Claude/AI tooling (local only)
+.agents/
+.claude/
+.mcp.json
+SKILL.md
+presearch.md
+PRD.md
+DEMO_SCRIPT.md
+PokerClient/.claude/
+PokerClient/.mcp.json
+PokerClient/CLAUDE.md
+
+# Build artifacts
+build/
+fly.toml
+
+# Asset packs (originals) and screenshots
+PokerClient/Assets/Screenshots/
+PokerClient/Assets/SIMPLE Avatars Icons/
+
+# Unity
+PokerClient/[Ll]ibrary/
+PokerClient/[Tt]emp/
+PokerClient/[Oo]bj/
+PokerClient/[Bb]uild/
+PokerClient/[Bb]uilds/
+PokerClient/[Ll]ogs/
+PokerClient/[Uu]ser[Ss]ettings/
+PokerClient/.vs/
+PokerClient/**/*.pidb
+PokerClient/**/*.suo
+PokerClient/**/*.csproj
+PokerClient/**/*.sln
