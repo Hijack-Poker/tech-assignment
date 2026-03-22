@@ -69,14 +69,7 @@ namespace HijackPoker.UI
         private bool _isActingTurnNow;
         private string _card1Code;
         private string _card2Code;
-        private RectTransform _cardPreviewRoot;
-        private Image _cardPreviewBackdrop;
-        private Image _cardPreviewImageLeft;
-        private Image _cardPreviewImageRight;
-        private static readonly Dictionary<string, string> SuitNames = new()
-        {
-            { "H", "Hearts" }, { "D", "Diamonds" }, { "C", "Clubs" }, { "S", "Spades" }
-        };
+        private CardPreviewController _cardPreview;
 
         private Tweener _winnerPulseTween;
         private float _displayedStack;
@@ -424,10 +417,7 @@ namespace HijackPoker.UI
             _wasActingTurn = isActingTurn;
         }
 
-        private static bool IsBettingStep(int step)
-        {
-            return step == 5 || step == 7 || step == 9 || step == 11;
-        }
+        private static bool IsBettingStep(int step) => PokerConstants.IsBettingStep(step);
 
         private void RegisterCardClickHandlers()
         {
@@ -446,153 +436,18 @@ namespace HijackPoker.UI
         private void OnCardClicked(CardView clickedCard)
         {
             if (!_isActingTurnNow) return;
-
             if (string.IsNullOrEmpty(_card1Code) || string.IsNullOrEmpty(_card2Code)) return;
 
-            var spriteLeft = LoadCardSprite(_card1Code);
-            var spriteRight = LoadCardSprite(_card2Code);
-            if (spriteLeft == null || spriteRight == null) return;
+            if (_cardPreview == null) _cardPreview = new CardPreviewController(this);
 
             Vector3 fromLeft = _card1 != null ? _card1.transform.position : clickedCard.transform.position;
             Vector3 fromRight = _card2 != null ? _card2.transform.position : clickedCard.transform.position;
-            ShowCardPreview(fromLeft, fromRight, spriteLeft, spriteRight);
-        }
-
-        private void EnsureCardPreviewUI()
-        {
-            if (_cardPreviewRoot != null) return;
-
-            var canvas = GetComponentInParent<Canvas>();
-            if (canvas == null) return;
-
-            var rootGO = new GameObject("CardPreview", typeof(RectTransform), typeof(CanvasGroup));
-            rootGO.transform.SetParent(canvas.transform, false);
-            _cardPreviewRoot = rootGO.GetComponent<RectTransform>();
-            _cardPreviewRoot.anchorMin = Vector2.zero;
-            _cardPreviewRoot.anchorMax = Vector2.one;
-            _cardPreviewRoot.offsetMin = Vector2.zero;
-            _cardPreviewRoot.offsetMax = Vector2.zero;
-
-            var backdropGO = new GameObject("Backdrop", typeof(RectTransform), typeof(Image), typeof(Button));
-            backdropGO.transform.SetParent(_cardPreviewRoot, false);
-            var backdropRT = backdropGO.GetComponent<RectTransform>();
-            backdropRT.anchorMin = Vector2.zero;
-            backdropRT.anchorMax = Vector2.one;
-            backdropRT.offsetMin = Vector2.zero;
-            backdropRT.offsetMax = Vector2.zero;
-            _cardPreviewBackdrop = backdropGO.GetComponent<Image>();
-            _cardPreviewBackdrop.color = new Color(0f, 0f, 0f, 0f);
-            _cardPreviewBackdrop.raycastTarget = true;
-            backdropGO.GetComponent<Button>().onClick.AddListener(HideCardPreview);
-
-            _cardPreviewImageLeft = CreatePreviewCard("CardLeft");
-            _cardPreviewImageRight = CreatePreviewCard("CardRight");
-
-            _cardPreviewRoot.gameObject.SetActive(false);
-        }
-
-        private Image CreatePreviewCard(string name)
-        {
-            var cardGO = new GameObject(name, typeof(RectTransform), typeof(Image));
-            cardGO.transform.SetParent(_cardPreviewRoot, false);
-            var cardRT = cardGO.GetComponent<RectTransform>();
-            cardRT.anchorMin = new Vector2(0.5f, 0.5f);
-            cardRT.anchorMax = new Vector2(0.5f, 0.5f);
-            cardRT.pivot = new Vector2(0.5f, 0.5f);
-            cardRT.sizeDelta = new Vector2(164f, 228f);
-            var img = cardGO.GetComponent<Image>();
-            img.preserveAspect = true;
-            img.raycastTarget = false;
-            img.color = new Color(1f, 1f, 1f, 0f);
-            return img;
-        }
-
-        private void ShowCardPreview(Vector3 fromWorldLeft, Vector3 fromWorldRight, Sprite revealLeft, Sprite revealRight)
-        {
-            EnsureCardPreviewUI();
-            if (_cardPreviewRoot == null || _cardPreviewBackdrop == null || _cardPreviewImageLeft == null || _cardPreviewImageRight == null) return;
-
-            _cardPreviewRoot.gameObject.SetActive(true);
-
-            DOTween.Kill(_cardPreviewBackdrop);
-            DOTween.Kill(_cardPreviewImageLeft);
-            DOTween.Kill(_cardPreviewImageLeft.transform);
-            DOTween.Kill(_cardPreviewImageRight);
-            DOTween.Kill(_cardPreviewImageRight.transform);
-
-            _cardPreviewBackdrop.color = new Color(0f, 0f, 0f, 0f);
-            _cardPreviewImageLeft.color = new Color(1f, 1f, 1f, 0f);
-            _cardPreviewImageRight.color = new Color(1f, 1f, 1f, 0f);
-
-            var leftRT = _cardPreviewImageLeft.rectTransform;
-            var rightRT = _cardPreviewImageRight.rectTransform;
-            leftRT.position = fromWorldLeft;
-            rightRT.position = fromWorldRight;
-            leftRT.localScale = Vector3.one * 0.72f;
-            rightRT.localScale = Vector3.one * 0.72f;
-
-            var back = Resources.Load<Sprite>("Cards/cardBack_red2");
-            _cardPreviewImageLeft.sprite = back != null ? back : revealLeft;
-            _cardPreviewImageRight.sprite = back != null ? back : revealRight;
-
-            Vector3 centerLeft = _cardPreviewRoot.TransformPoint(new Vector3(-94f, 20f, 0f));
-            Vector3 centerRight = _cardPreviewRoot.TransformPoint(new Vector3(94f, 20f, 0f));
-
-            DOTween.ToAlpha(() => _cardPreviewBackdrop.color, c => _cardPreviewBackdrop.color = c, 0.45f, 0.18f);
-            AnimatePreviewCard(_cardPreviewImageLeft, leftRT, centerLeft, revealLeft);
-            AnimatePreviewCard(_cardPreviewImageRight, rightRT, centerRight, revealRight);
-        }
-
-        private void AnimatePreviewCard(Image img, RectTransform rt, Vector3 target, Sprite reveal)
-        {
-            DOTween.Sequence()
-                .Append(DOTween.ToAlpha(() => img.color, c => img.color = c, 1f, 0.14f))
-                .Join(rt.DOMove(target, 0.24f).SetEase(Ease.OutQuad))
-                .Join(rt.DOScale(1.06f, 0.24f).SetEase(Ease.OutBack))
-                .Append(rt.DOScaleX(0.05f, 0.10f).SetEase(Ease.InSine))
-                .AppendCallback(() => img.sprite = reveal)
-                .Append(rt.DOScaleX(1.12f, 0.12f).SetEase(Ease.OutSine))
-                .Append(rt.DOScale(1f, 0.10f).SetEase(Ease.OutQuad));
+            _cardPreview.Show(_card1Code, _card2Code, fromLeft, fromRight);
         }
 
         private void HideCardPreview()
         {
-            if (_cardPreviewRoot == null || !_cardPreviewRoot.gameObject.activeSelf) return;
-
-            DOTween.Kill(_cardPreviewBackdrop);
-            if (_cardPreviewImageLeft != null)
-            {
-                DOTween.Kill(_cardPreviewImageLeft);
-                DOTween.Kill(_cardPreviewImageLeft.transform);
-            }
-            if (_cardPreviewImageRight != null)
-            {
-                DOTween.Kill(_cardPreviewImageRight);
-                DOTween.Kill(_cardPreviewImageRight.transform);
-            }
-
-            DOTween.Sequence()
-                .Append(DOTween.ToAlpha(() => _cardPreviewBackdrop.color, c => _cardPreviewBackdrop.color = c, 0f, 0.12f))
-                .Join(_cardPreviewImageLeft != null
-                    ? DOTween.ToAlpha(() => _cardPreviewImageLeft.color, c => _cardPreviewImageLeft.color = c, 0f, 0.10f)
-                    : DOVirtual.DelayedCall(0f, () => { }))
-                .Join(_cardPreviewImageRight != null
-                    ? DOTween.ToAlpha(() => _cardPreviewImageRight.color, c => _cardPreviewImageRight.color = c, 0f, 0.10f)
-                    : DOVirtual.DelayedCall(0f, () => { }))
-                .OnComplete(() =>
-                {
-                    if (_cardPreviewRoot != null)
-                        _cardPreviewRoot.gameObject.SetActive(false);
-                });
-        }
-
-        private static Sprite LoadCardSprite(string cardCode)
-        {
-            var (rank, suit) = CardUtils.ParseCard(cardCode);
-            if (string.IsNullOrEmpty(rank) || string.IsNullOrEmpty(suit))
-                return null;
-            string suitName = SuitNames.TryGetValue(suit, out var mapped) ? mapped : suit;
-            return Resources.Load<Sprite>($"Cards/card{suitName}{rank}");
+            _cardPreview?.Hide();
         }
 
         private void ApplyFoldVisual(bool isFolded)

@@ -4,6 +4,7 @@ using UnityEngine;
 using DG.Tweening;
 using HijackPoker.Api;
 using HijackPoker.Models;
+using HijackPoker.Utils;
 
 namespace HijackPoker.Managers
 {
@@ -224,13 +225,13 @@ namespace HijackPoker.Managers
                 int move = state.Game.Move;
 
                 // Reset raise tracker on new betting round
-                if (IsBettingStep(step) && step != _lastBettingStep)
+                if (PokerConstants.IsBettingStep(step) && step != _lastBettingStep)
                 {
                     _hasRaisedThisRound = false;
                     _lastBettingStep = step;
                 }
 
-                if (IsBettingStep(step) && move > 0)
+                if (PokerConstants.IsBettingStep(step) && move > 0)
                 {
                     var actor = state.Players?.Find(p => p.Seat == move);
                     if (actor != null && !actor.IsFolded && !actor.IsAllIn)
@@ -251,88 +252,13 @@ namespace HijackPoker.Managers
 
         private void SubmitAutoAction(PlayerState actor, TableResponse state)
         {
-            float toCall = Mathf.Max(0f, state.Game.CurrentBet - actor.Bet);
-            float minRaise = Mathf.Max(state.Game.CurrentBet + state.Game.BigBlind,
-                                       state.Game.CurrentBet * 2f);
-            bool canRaise = actor.Stack > toCall + 0.01f;
+            var ctx = BettingCalculator.Calculate(state.Game.CurrentBet, actor.Bet, actor.Stack, state.Game.BigBlind);
+            var result = AutoPlayDecision.Decide(PlayStyle, ctx, actor, _hasRaisedThisRound, Random.value);
 
-            switch (PlayStyle)
-            {
-                case AutoPlayStyle.Safe:
-                    // Always call or check
-                    if (toCall <= 0f)
-                        _ = AdvanceStepAsync("check", 0f);
-                    else
-                        _ = AdvanceStepAsync("call", toCall);
-                    break;
+            if (result.Action == "bet" || result.Action == "raise")
+                _hasRaisedThisRound = true;
 
-                case AutoPlayStyle.SmallRandom:
-                    // One raise per betting round, otherwise call/check
-                    if (!_hasRaisedThisRound && canRaise && Random.value < 0.2f)
-                    {
-                        _hasRaisedThisRound = true;
-                        float raiseAmount = Mathf.Min(minRaise, actor.Stack + actor.Bet);
-                        if (toCall <= 0f)
-                            _ = AdvanceStepAsync("bet", raiseAmount);
-                        else
-                            _ = AdvanceStepAsync("raise", raiseAmount);
-                    }
-                    else if (toCall <= 0f)
-                    {
-                        _ = AdvanceStepAsync("check", 0f);
-                    }
-                    else
-                    {
-                        _ = AdvanceStepAsync("call", toCall);
-                    }
-                    break;
-
-                case AutoPlayStyle.Hard:
-                    // Random actions: 10% fold, 40% call/check, 30% raise, 20% all-in
-                    float roll = Random.value;
-                    if (roll < 0.10f && toCall > 0f)
-                    {
-                        // Fold (only if there's something to call)
-                        _ = AdvanceStepAsync("fold", 0f);
-                    }
-                    else if (roll < 0.50f)
-                    {
-                        // Call/check
-                        if (toCall <= 0f)
-                            _ = AdvanceStepAsync("check", 0f);
-                        else
-                            _ = AdvanceStepAsync("call", toCall);
-                    }
-                    else if (roll < 0.80f && canRaise)
-                    {
-                        // Raise (random between min raise and 3x)
-                        float maxR = Mathf.Min(minRaise * 3f, actor.Stack + actor.Bet);
-                        float raiseAmount = Mathf.Max(minRaise, Random.Range(minRaise, maxR));
-                        if (toCall <= 0f)
-                            _ = AdvanceStepAsync("bet", raiseAmount);
-                        else
-                            _ = AdvanceStepAsync("raise", raiseAmount);
-                    }
-                    else if (canRaise)
-                    {
-                        // All-in
-                        _ = AdvanceStepAsync("allin", actor.Stack);
-                    }
-                    else
-                    {
-                        // Can't raise, just call
-                        if (toCall <= 0f)
-                            _ = AdvanceStepAsync("check", 0f);
-                        else
-                            _ = AdvanceStepAsync("call", toCall);
-                    }
-                    break;
-            }
-        }
-
-        private static bool IsBettingStep(int step)
-        {
-            return step == 5 || step == 7 || step == 9 || step == 11;
+            _ = AdvanceStepAsync(result.Action, result.Amount);
         }
 
         private void OnDestroy()

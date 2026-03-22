@@ -210,6 +210,8 @@ namespace HijackPoker.UI
 
             // Store the player name, avatar, and table for the game scene
             string playerName = _nameInput.text.Trim();
+            if (playerName.Length > HijackPoker.Utils.PokerConstants.MaxNameLength)
+                playerName = playerName[..HijackPoker.Utils.PokerConstants.MaxNameLength];
             PlayerPrefs.SetString("PlayerName", playerName);
             PlayerPrefs.SetString("PlayerAvatar", _selectedAvatar);
             PlayerPrefs.SetInt("TableId", 1);

@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using HijackPoker.Managers;
 using HijackPoker.Models;
+using HijackPoker.Utils;
 
 namespace HijackPoker.UI
 {
@@ -277,27 +278,15 @@ namespace HijackPoker.UI
             }
         }
 
-        private static bool IsBettingStep(int step)
-        {
-            return step == 5 || step == 7 || step == 9 || step == 11;
-        }
+        private static bool IsBettingStep(int step) => PokerConstants.IsBettingStep(step);
 
         private static bool CanLocalPlayerAct(TableResponse state)
         {
             if (state?.Game == null) return false;
             if (!IsBettingStep(state.Game.HandStep)) return false;
-            int localSeat = ResolveLocalSeat(state);
-            return localSeat > 0 && state.Game.Move == localSeat;
-        }
-
-        private static int ResolveLocalSeat(TableResponse state)
-        {
-            if (state?.Players == null || state.Players.Count == 0) return -1;
             string localName = PlayerPrefs.GetString("PlayerName", "Player");
-            var me = state.Players.Find(p =>
-                !string.IsNullOrEmpty(p.Username) &&
-                p.Username.Equals(localName, System.StringComparison.OrdinalIgnoreCase));
-            return me != null ? me.Seat : 1;
+            int localSeat = SeatResolver.ResolveLocalSeat(state.Players, localName);
+            return localSeat > 0 && state.Game.Move == localSeat;
         }
 
         private void ComputeActionContext(TableResponse state, bool inBettingStep, bool driverCanAct)
@@ -320,15 +309,11 @@ namespace HijackPoker.UI
             _canActNow = true;
             _actorStack = actor.Stack;
             _bigBlind = state.Game.BigBlind;
-            _currentToCall = Mathf.Max(0f, state.Game.CurrentBet - actor.Bet);
-            // If calling would use entire stack, it's an all-in call
-            _isCallAllIn = _currentToCall >= actor.Stack && actor.Stack > 0;
-            // Min raise = 2x current bet (must at least double)
-            float minRaiseTo = state.Game.CurrentBet * 2f;
-            // But at least currentBet + bigBlind
-            minRaiseTo = Mathf.Max(minRaiseTo, state.Game.CurrentBet + state.Game.BigBlind);
-            _currentMinRaise = minRaiseTo;
-            _canRaiseNow = actor.Stack > _currentToCall + 0.01f;
+            var betCtx = BettingCalculator.Calculate(state.Game.CurrentBet, actor.Bet, actor.Stack, state.Game.BigBlind);
+            _currentToCall = betCtx.ToCall;
+            _isCallAllIn = betCtx.IsCallAllIn;
+            _currentMinRaise = betCtx.MinRaise;
+            _canRaiseNow = betCtx.CanRaise;
         }
 
         private void SetActionButtonLabels()

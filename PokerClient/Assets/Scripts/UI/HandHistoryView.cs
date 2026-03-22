@@ -121,20 +121,16 @@ namespace HijackPoker.UI
             return null;
         }
 
-        private bool IsBettingStep(int step)
-        {
-            // 5=Pre-Flop, 7=Flop, 9=Turn, 11=River betting
-            return step == 5 || step == 7 || step == 9 || step == 11;
-        }
+        private static bool IsBettingStep(int step) => PokerConstants.IsBettingStep(step);
 
-        private string ColoredName(PlayerState p)
+        internal static string ColoredName(PlayerState p)
         {
             var c = SeatView.GetSeatColor(p.Seat);
             string hex = ColorUtility.ToHtmlStringRGB(c);
             return $"<color=#{hex}>{p.Username}</color>";
         }
 
-        private string FormatAction(PlayerState p)
+        internal static string FormatAction(PlayerState p)
         {
             string name = ColoredName(p);
             switch (p.Action?.ToLower())

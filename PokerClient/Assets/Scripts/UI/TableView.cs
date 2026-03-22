@@ -4,15 +4,11 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.IO;
-using System.Reflection;
 using TMPro;
 using DG.Tweening;
-using UnityEngine.Networking;
 using HijackPoker.Managers;
 using HijackPoker.Models;
 using HijackPoker.Utils;
-using uVegas.Demo;
 
 namespace HijackPoker.UI
 {
@@ -26,7 +22,6 @@ namespace HijackPoker.UI
         [Header("Center Pot")]
         [SerializeField] private TextMeshProUGUI _centerPotText;
         [SerializeField] private RectTransform _potTarget;
-        private readonly List<GameObject> _potChips = new List<GameObject>();
 
         [Header("Loading")]
         [SerializeField] private CanvasGroup _loadingOverlayGroup;
@@ -37,66 +32,33 @@ namespace HijackPoker.UI
         [SerializeField] private RectTransform _animLayer;
         [SerializeField] private Sprite _chipFlySprite;
 
-        [Header("Audio")]
-        [SerializeField] private AudioSource _sfxAudioSource;
-        [SerializeField] private AudioClip _turnStartSound;
-        [SerializeField] private AudioClip _timeRemainingSound;
-        [SerializeField] private AudioClip _dealShuffleSound;
-        [SerializeField] private AudioClip _foldSound;
-        [SerializeField] private AudioClip _chipBetSound;
-
-        private AudioClip _crowdClapSound;
         private Sprite[] _allAvatars;
         private Dictionary<int, Sprite> _seatAvatars;
         private bool _avatarsAssigned;
 
-        // State tracking for animations
+        // State tracking
         private int _prevHandStep = -1;
         private int _prevGameNo = -1;
         private Dictionary<int, float> _prevBets = new();
-        private float _displayedPot;
         private bool _isFirstState = true;
         private bool _hasPlayedDealThisHand;
-        private Coroutine _turnTimerRoutine;
-        private int _turnTimerSeat = -1;
-        private int _turnTimerStep = -1;
-        private int _turnTimerGameNo = -1;
-        private const float TurnDurationSeconds = 20f;
-        private const float LowTimeWarningSeconds = 5f;
-        private bool _hasPlayedLowTimeWarning;
-        private AudioSource _timeWarningAudioSource;
         private int _badgeGameNo = -1;
         private int _badgeDealerSeat = -1;
         private int _badgeSmallBlindSeat = -1;
         private int _badgeBigBlindSeat = -1;
         private int _localSeat = 1;
         private HashSet<int> _prevFoldedSeats = new();
-        private float _lastChipSoundTime = -10f;
-        private const float ChipSoundCooldownSeconds = 0.06f;
-        private int _celebratedGameNo = -1;
-        private RectTransform _celebrationRoot;
-        private Image _focusBackdrop;
-        private RectTransform _confettiLayer;
-        private Image _winnerAvatarMaskImage;
-        private Image _winnerAvatarImage;
-        private Image _winnerCard1Image;
-        private Image _winnerCard2Image;
-        private Image _winnerBannerPlate;
-        private TextMeshProUGUI _winnerBannerText;
-        private Button _restartHandButton;
-        private Tween _restartButtonDelayTween;
-        private const float RestartButtonDelaySeconds = 2.8f;
-        private static readonly Dictionary<string, string> CardSuitNames = new()
-        {
-            { "H", "Hearts" }, { "D", "Diamonds" }, { "C", "Clubs" }, { "S", "Spades" }
-        };
 
         // Card back sprite for deal animation
         private Sprite _cardBackSprite;
 
-        // Tip button
-        private Button _tipButton;
-        private TextMeshProUGUI _tipFloatText;
+        // Sub-controllers
+        private TableAudioController _audio;
+        private PotDisplayController _potDisplay;
+        private TurnTimerController _turnTimer;
+        private TipController _tipController;
+        private WinnerCelebrationController _celebration;
+        private TableAnimationController _animation;
 
         private void Awake()
         {
@@ -108,12 +70,46 @@ namespace HijackPoker.UI
                 var allCards = Resources.LoadAll<Sprite>("Cards");
                 _cardBackSprite = allCards.FirstOrDefault(s => s.name.StartsWith("cardBack"));
             }
+
             EnsureAnimationRefs();
-            EnsureAudioRefs();
-            TryResolveTurnStartSound();
-            TryResolveDealAndFoldSounds();
-            CreateTipButton();
+            InitializeSubControllers();
             SetLoadingVisible(true, immediate: true);
+        }
+
+        private void InitializeSubControllers()
+        {
+            // Audio
+            _audio = GetComponent<TableAudioController>();
+            if (_audio == null) _audio = gameObject.AddComponent<TableAudioController>();
+            _audio.Initialize();
+
+            // Pot Display
+            _potDisplay = GetComponent<PotDisplayController>();
+            if (_potDisplay == null) _potDisplay = gameObject.AddComponent<PotDisplayController>();
+            _potDisplay.Initialize(_centerPotText, _potTarget, _chipFlySprite);
+
+            // Turn Timer
+            _turnTimer = GetComponent<TurnTimerController>();
+            if (_turnTimer == null) _turnTimer = gameObject.AddComponent<TurnTimerController>();
+            _turnTimer.Initialize(_seatViews, SeatToViewIndex, _gameManager, _stateManager, _audio);
+
+            // Tip Controller
+            _tipController = GetComponent<TipController>();
+            if (_tipController == null) _tipController = gameObject.AddComponent<TipController>();
+            _tipController.Initialize(_dealerSource, _animLayer, _chipFlySprite,
+                                      _seatViews, _gameManager, _stateManager, _audio, SeatToViewIndex);
+
+            // Winner Celebration
+            _celebration = GetComponent<WinnerCelebrationController>();
+            if (_celebration == null) _celebration = gameObject.AddComponent<WinnerCelebrationController>();
+            _celebration.Initialize(_animLayer, _potTarget, _chipFlySprite,
+                                    _seatViews, _gameManager, _seatAvatars, _audio, SeatToViewIndex);
+
+            // Animation Controller
+            _animation = GetComponent<TableAnimationController>();
+            if (_animation == null) _animation = gameObject.AddComponent<TableAnimationController>();
+            _animation.Initialize(_animLayer, _dealerSource, _potTarget, _chipFlySprite,
+                                  _cardBackSprite, _seatViews, _audio, SeatToViewIndex);
         }
 
         private void OnEnable()
@@ -121,7 +117,6 @@ namespace HijackPoker.UI
             _stateManager.OnTableStateChanged += OnStateChanged;
             _stateManager.OnTableReset += OnTableReset;
 
-            // Ensure ShowdownView exists
             if (GetComponent<ShowdownView>() == null)
                 gameObject.AddComponent<ShowdownView>();
         }
@@ -134,10 +129,9 @@ namespace HijackPoker.UI
 
         private void OnTableReset()
         {
-            // Reset tracking so the next SetState sees a "new hand" and triggers shuffle
             _prevGameNo = -1;
             _prevHandStep = -1;
-            _celebratedGameNo = -1;
+            _celebration.ResetTracking();
             _isFirstState = false;
         }
 
@@ -163,19 +157,22 @@ namespace HijackPoker.UI
             {
                 bool isLocal = !string.IsNullOrEmpty(localPlayerName) &&
                                !string.IsNullOrEmpty(player.Username) &&
-                               player.Username.Equals(localPlayerName, System.StringComparison.OrdinalIgnoreCase);
+                               player.Username.Equals(localPlayerName, StringComparison.OrdinalIgnoreCase);
                 if (!isLocal && player.Seat == 1) isLocal = true;
                 if (isLocal && playerSprite != null)
                     _seatAvatars[player.Seat] = playerSprite;
                 else if (poolIdx < pool.Count)
                     _seatAvatars[player.Seat] = pool[poolIdx++];
             }
+
+            _celebration.UpdateSeatAvatars(_seatAvatars);
         }
 
         private void OnStateChanged(TableResponse state)
         {
             string localName = _gameManager != null ? _gameManager.PlayerName : null;
-            _localSeat = ResolveLocalSeat(state.Players, localName);
+            _localSeat = SeatResolver.ResolveLocalSeat(state.Players, localName);
+            _tipController.SetLocalSeat(_localSeat);
             AssignAvatars(state.Players, localName);
 
             int step = state.Game.HandStep;
@@ -183,17 +180,14 @@ namespace HijackPoker.UI
 
             ResolveBlindSeatsForHand(state, out int dealerSeat, out int sbSeat, out int bbSeat, newHand);
 
-            // Reset tracking on new hand
             if (newHand)
             {
                 _prevBets.Clear();
                 _prevHandStep = -1;
                 _hasPlayedDealThisHand = false;
                 _prevFoldedSeats.Clear();
-                HideWinnerCelebration();
-
-                // Play shuffle animation on new hand (including first load)
-                StartCoroutine(AnimateShuffleAtDealer());
+                _celebration.HideWinnerCelebration();
+                StartCoroutine(_animation.AnimateShuffleAtDealer());
             }
 
             // ── 1. CHIP FLY ANIMATION (bet increases) ──
@@ -206,29 +200,23 @@ namespace HijackPoker.UI
                     bool betIncreased = player.Bet > prevBet && player.Bet > 0;
                     if (!betIncreased) continue;
 
-                    // During blind posting steps, only animate the blind poster.
-                    // After processing step 2 (SB), state arrives as step 3 with SB set.
-                    // After processing step 3 (BB), state arrives as step 4 with BB set.
                     if (step == 3 && state.Game.BigBlindSeat == 0 && player.Seat != state.Game.SmallBlindSeat) continue;
                     if (step == 4 && player.Seat != state.Game.BigBlindSeat) continue;
 
                     int idx = SeatToViewIndex(player.Seat);
                     if (idx >= 0 && idx < _seatViews.Length)
-                    {
-                        AnimateChipFly(_seatViews[idx]);
-                    }
+                        _animation.AnimateChipFly(_seatViews[idx]);
                 }
             }
 
-            // ── 2. CENTER POT UPDATE (pot + all outstanding bets = live total) ──
+            // ── 2. CENTER POT UPDATE ──
             float livePot = state.Game.Pot;
             if (state.Players != null)
                 foreach (var p in state.Players)
                     livePot += p.Bet;
-            UpdateCenterPot(livePot);
+            _potDisplay.UpdateCenterPot(livePot);
 
             // ── 3. DETECT CARD DEALING ──
-            // Trigger exactly once per hand once cards exist and we are at/after deal step.
             bool hasDealablePlayers = state.Players.Any(p => p.HasCards && p.Seat > 0);
             bool shouldDealCards = !_hasPlayedDealThisHand && step >= 4 && hasDealablePlayers;
 
@@ -254,7 +242,7 @@ namespace HijackPoker.UI
 
             _communityCardsView.Refresh(state.Game.CommunityCards);
 
-            // Hide hole cards until deal step begins.
+            // Hide hole cards until deal step begins
             if (step < 4)
             {
                 foreach (var player in state.Players)
@@ -274,7 +262,7 @@ namespace HijackPoker.UI
                 }
             }
 
-            // ── 5. CARD DEAL ANIMATION (after redraw so cards are set up) ──
+            // ── 5. CARD DEAL ANIMATION ──
             if (shouldDealCards)
             {
                 var activePlayers = state.Players
@@ -284,12 +272,12 @@ namespace HijackPoker.UI
                         return p.HasCards && idx >= 0 && idx < _seatViews.Length;
                     })
                     .ToList();
-                StartCoroutine(AnimateCardDeal(activePlayers, dealerSeat));
+                StartCoroutine(_animation.AnimateCardDeal(activePlayers, dealerSeat));
                 _hasPlayedDealThisHand = true;
             }
 
             UpdateFoldSounds(state.Players);
-            UpdateWinnerCelebration(state);
+            _celebration.UpdateWinnerCelebration(state);
 
             // Save state for next comparison
             _prevHandStep = step;
@@ -301,7 +289,7 @@ namespace HijackPoker.UI
             if (_isFirstState)
                 SetLoadingVisible(false, immediate: false);
 
-            UpdateTurnTimer(state);
+            _turnTimer.UpdateTurnTimer(state);
             _isFirstState = false;
         }
 
@@ -314,8 +302,6 @@ namespace HijackPoker.UI
                 .OrderBy(s => s)
                 .ToList();
 
-            // Keep badges stable once the API has provided actual SB/BB seats
-            // (step >= 3 means both blinds have been posted).
             bool apiHasBlinds = state.Game.SmallBlindSeat > 0 && state.Game.BigBlindSeat > 0;
             if (!newHand && _badgeGameNo == state.Game.GameNo &&
                 _badgeDealerSeat > 0 && _badgeSmallBlindSeat > 0 && _badgeBigBlindSeat > 0 &&
@@ -335,7 +321,7 @@ namespace HijackPoker.UI
             sbSeat = 0;
             bbSeat = 0;
 
-            var clockwiseOccupied = GetClockwiseSeatOrder(occupied);
+            var clockwiseOccupied = _animation.GetClockwiseSeatOrder(occupied);
 
             if (clockwiseOccupied.Count == 0)
             {
@@ -345,7 +331,6 @@ namespace HijackPoker.UI
             }
             else
             {
-                // Prefer backend-provided dealer/blind seats when valid.
                 if (clockwiseOccupied.Contains(apiDealerSeat))
                     dealerSeat = apiDealerSeat;
 
@@ -355,7 +340,6 @@ namespace HijackPoker.UI
                     bbSeat = apiBigBlindSeat;
                 }
 
-                // If dealer is not provided yet, rotate clockwise from previous hand's dealer.
                 if (dealerSeat <= 0)
                 {
                     if (_badgeDealerSeat > 0)
@@ -364,7 +348,6 @@ namespace HijackPoker.UI
                         dealerSeat = clockwiseOccupied[0];
                 }
 
-                // If SB/BB are missing from backend, derive from dealer clockwise.
                 if (sbSeat <= 0 || bbSeat <= 0)
                 {
                     sbSeat = GetNextClockwiseSeat(clockwiseOccupied, dealerSeat);
@@ -381,532 +364,40 @@ namespace HijackPoker.UI
         private static int GetNextClockwiseSeat(List<int> clockwiseSeats, int fromSeat)
         {
             if (clockwiseSeats == null || clockwiseSeats.Count == 0) return fromSeat;
-
             int idx = clockwiseSeats.IndexOf(fromSeat);
             if (idx < 0) return clockwiseSeats[0];
             return clockwiseSeats[(idx + 1) % clockwiseSeats.Count];
         }
 
-        // ══════ CHIP FLY ANIMATION ══════
-        private void AnimateChipFly(SeatView seat)
-        {
-            if (_animLayer == null || _potTarget == null || _chipFlySprite == null) return;
-            PlayChipBetSound();
-
-            var chipGO = new GameObject("FlyChip", typeof(RectTransform));
-            chipGO.transform.SetParent(_animLayer, false);
-            var img = chipGO.AddComponent<Image>();
-            img.sprite = _chipFlySprite;
-            img.preserveAspect = true;
-            img.raycastTarget = false;
-
-            var rt = chipGO.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(32, 32);
-
-            // Position at seat (world space, same canvas)
-            chipGO.transform.position = seat.transform.position;
-
-            // Fly to pot center
-            var seq = DOTween.Sequence();
-            seq.Append(chipGO.transform.DOMove(_potTarget.position, 0.45f).SetEase(Ease.InOutCubic));
-            seq.Join(DOTween.To(() => rt.sizeDelta, v => rt.sizeDelta = v, new Vector2(20, 20), 0.45f).SetEase(Ease.InQuad));
-            seq.Join(DOTween.ToAlpha(() => img.color, c => img.color = c, 0f, 0.1f).SetDelay(0.35f));
-            seq.OnComplete(() => Destroy(chipGO));
-        }
-
-        // ══════ TIP BUTTON ══════
-        private void CreateTipButton()
-        {
-            // We need _dealerSource to position the button; defer if not ready
-            StartCoroutine(CreateTipButtonDeferred());
-        }
-
-        private IEnumerator CreateTipButtonDeferred()
-        {
-            // Wait until dealerSource is resolved
-            while (_dealerSource == null)
-            {
-                EnsureAnimationRefs();
-                yield return null;
-            }
-
-            var canvas = GetComponentInParent<Canvas>();
-            Transform parent = canvas != null ? canvas.transform : transform;
-
-            var go = new GameObject("TipButton", typeof(RectTransform), typeof(Image), typeof(Button));
-            go.transform.SetParent(parent, false);
-
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 1f);
-            // Position below the dealer
-            rt.position = _dealerSource.position;
-            rt.anchoredPosition += new Vector2(0f, -50f);
-            rt.sizeDelta = new Vector2(72f, 30f);
-
-            var img = go.GetComponent<Image>();
-            img.color = new Color(0.18f, 0.55f, 0.22f, 0.9f);
-
-            // Label
-            var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
-            txtGO.transform.SetParent(go.transform, false);
-            var txtRt = txtGO.GetComponent<RectTransform>();
-            txtRt.anchorMin = Vector2.zero;
-            txtRt.anchorMax = Vector2.one;
-            txtRt.offsetMin = Vector2.zero;
-            txtRt.offsetMax = Vector2.zero;
-            var txt = txtGO.GetComponent<TextMeshProUGUI>();
-            txt.text = "TIP $1";
-            txt.fontSize = 13;
-            txt.fontStyle = FontStyles.Bold;
-            txt.alignment = TextAlignmentOptions.Center;
-            txt.color = Color.white;
-
-            _tipButton = go.GetComponent<Button>();
-            _tipButton.onClick.AddListener(OnTipClicked);
-        }
-
-        private bool _isTipping;
-
-        private async void OnTipClicked()
-        {
-            if (_isTipping) return;
-            var state = _gameManager?.CurrentState;
-            if (state?.Game == null || state.Players == null) return;
-
-            // Find the acting player (whose turn it is), or default to local seat
-            int actingSeat = state.Game.Move > 0 ? state.Game.Move : _localSeat;
-            var actor = state.Players.Find(p => p.Seat == actingSeat);
-            if (actor == null || actor.Stack < 1f) return;
-
-            _isTipping = true;
-
-            // Animate chip from acting seat to dealer
-            int viewIdx = SeatToViewIndex(actingSeat);
-            if (viewIdx >= 0 && viewIdx < _seatViews.Length)
-                AnimateTipChip(_seatViews[viewIdx]);
-
-            // Deduct $1 on the backend
-            var apiClient = FindObjectOfType<HijackPoker.Api.PokerApiClient>();
-            if (apiClient != null)
-            {
-                await apiClient.TipDealerAsync(state.Game.TableId, actingSeat);
-                // Refresh state so the stack updates on screen
-                var updated = await apiClient.GetTableStateAsync(state.Game.TableId);
-                if (updated != null)
-                    _stateManager.SetState(updated);
-            }
-
-            _isTipping = false;
-        }
-
-        private void AnimateTipChip(SeatView seat)
-        {
-            if (_animLayer == null || _dealerSource == null || _chipFlySprite == null) return;
-            PlayChipBetSound();
-
-            var chipGO = new GameObject("TipChip", typeof(RectTransform));
-            chipGO.transform.SetParent(_animLayer, false);
-            var img = chipGO.AddComponent<Image>();
-            img.sprite = _chipFlySprite;
-            img.preserveAspect = true;
-            img.raycastTarget = false;
-
-            var rt = chipGO.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(28, 28);
-            chipGO.transform.position = seat.transform.position;
-
-            // Fly to dealer
-            var seq = DOTween.Sequence();
-            seq.Append(chipGO.transform.DOMove(_dealerSource.position, 0.5f).SetEase(Ease.InOutCubic));
-            seq.Join(DOTween.To(() => rt.sizeDelta, v => rt.sizeDelta = v, new Vector2(18, 18), 0.5f).SetEase(Ease.InQuad));
-            seq.Join(DOTween.ToAlpha(() => img.color, c => img.color = c, 0f, 0.12f).SetDelay(0.38f));
-            seq.OnComplete(() =>
-            {
-                Destroy(chipGO);
-                ShowTipFloat();
-            });
-        }
-
-        private void ShowTipFloat()
-        {
-            if (_dealerSource == null) return;
-
-            var canvas = GetComponentInParent<Canvas>();
-            Transform parent = canvas != null ? canvas.transform : transform;
-
-            var go = new GameObject("TipFloat", typeof(RectTransform), typeof(TextMeshProUGUI));
-            go.transform.SetParent(parent, false);
-            go.transform.position = _dealerSource.position;
-
-            var rt = go.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(80, 30);
-
-            var txt = go.GetComponent<TextMeshProUGUI>();
-            txt.text = "+$1";
-            txt.fontSize = 20;
-            txt.fontStyle = FontStyles.Bold;
-            txt.alignment = TextAlignmentOptions.Center;
-            txt.color = new Color(0.29f, 0.87f, 0.42f);
-            txt.raycastTarget = false;
-
-            // Float upward and fade
-            float targetY = rt.anchoredPosition.y + 40f;
-            var seq = DOTween.Sequence();
-            seq.Append(DOTween.To(() => rt.anchoredPosition, v => rt.anchoredPosition = v,
-                new Vector2(rt.anchoredPosition.x, targetY), 0.8f).SetEase(Ease.OutCubic));
-            seq.Join(DOTween.ToAlpha(() => txt.color, c => txt.color = c, 0f, 0.3f).SetDelay(0.5f));
-            seq.OnComplete(() => Destroy(go));
-        }
-
-        // ══════ SHUFFLE ANIMATION ══════
-        private IEnumerator AnimateShuffleAtDealer()
-        {
-            EnsureAnimationRefs();
-            if (_animLayer == null || _cardBackSprite == null) yield break;
-
-            Vector3 dealerPos = _dealerSource != null
-                ? _dealerSource.position
-                : transform.position + new Vector3(0f, 180f, 0f);
-
-            PlayDealShuffleSound();
-
-            const int cardCount = 8;
-            const float spreadX = 24f;
-            const float splitDuration = 0.28f;
-            const float mergeDuration = 0.22f;
-            var cards = new List<GameObject>();
-
-            // Create card backs at dealer, starting small (grow-in effect)
-            for (int i = 0; i < cardCount; i++)
-            {
-                var go = new GameObject($"ShuffleCard_{i}", typeof(RectTransform));
-                go.transform.SetParent(_animLayer, false);
-                var img = go.AddComponent<Image>();
-                img.sprite = _cardBackSprite;
-                img.preserveAspect = true;
-                img.raycastTarget = false;
-                img.color = new Color(1f, 1f, 1f, 0f);
-
-                var rt = go.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(42, 58);
-                go.transform.position = dealerPos;
-                go.transform.localScale = Vector3.zero;
-                rt.localRotation = Quaternion.Euler(0f, 0f, (i - cardCount / 2f) * 5f);
-
-                cards.Add(go);
-            }
-
-            // Phase 1: Grow in — cards scale up from 0 with stagger, fan out
-            {
-                var growSeq = DOTween.Sequence();
-                for (int i = 0; i < cardCount; i++)
-                {
-                    var go = cards[i];
-                    var img = go.GetComponent<Image>();
-                    float delay = i * 0.04f;
-                    growSeq.Insert(delay, go.transform.DOScale(1.15f, 0.3f).SetEase(Ease.OutBack));
-                    growSeq.Insert(delay, DOTween.ToAlpha(() => img.color, c => img.color = c, 1f, 0.15f));
-                }
-                // Settle to normal scale
-                growSeq.Append(DOTween.Sequence()); // noop spacer
-                for (int i = 0; i < cardCount; i++)
-                    growSeq.Join(cards[i].transform.DOScale(1f, 0.15f).SetEase(Ease.InOutQuad));
-
-                yield return growSeq.WaitForCompletion();
-            }
-
-            // Phase 2: Hold briefly so the deck is visible
-            yield return new WaitForSeconds(0.25f);
-
-            // Phase 3: Riffle shuffle — 3 rounds
-            int half = cardCount / 2;
-            for (int round = 0; round < 3; round++)
-            {
-                var seq = DOTween.Sequence();
-                // Split apart
-                for (int i = 0; i < cardCount; i++)
-                {
-                    var rt = cards[i].GetComponent<RectTransform>();
-                    float dir = i < half ? -1f : 1f;
-                    Vector3 splitTarget = dealerPos + new Vector3(dir * spreadX, 0f, 0f);
-                    seq.Join(cards[i].transform.DOMove(splitTarget, splitDuration).SetEase(Ease.OutQuad));
-                    seq.Join(rt.DOLocalRotate(new Vector3(0f, 0f, dir * 10f), splitDuration).SetEase(Ease.OutQuad));
-                }
-                // Brief pause
-                seq.AppendInterval(0.05f);
-                // Merge back
-                for (int i = 0; i < cardCount; i++)
-                {
-                    var rt = cards[i].GetComponent<RectTransform>();
-                    seq.Join(cards[i].transform.DOMove(dealerPos, mergeDuration).SetEase(Ease.InQuad));
-                    seq.Join(rt.DOLocalRotate(new Vector3(0f, 0f, (i - cardCount / 2f) * 5f), mergeDuration).SetEase(Ease.InQuad));
-                }
-                // Slight pop on merge
-                for (int i = 0; i < cardCount; i++)
-                    seq.Join(cards[i].transform.DOPunchScale(Vector3.one * 0.08f, 0.15f, 6, 0.5f));
-
-                yield return seq.WaitForCompletion();
-
-                if (round < 2)
-                    yield return new WaitForSeconds(0.08f);
-            }
-
-            // Phase 4: Hold the neat stack a moment
-            yield return new WaitForSeconds(0.3f);
-
-            // Phase 5: Fade out and cleanup
-            var fadeSeq = DOTween.Sequence();
-            foreach (var go in cards)
-            {
-                var img = go.GetComponent<Image>();
-                fadeSeq.Join(DOTween.ToAlpha(() => img.color, c => img.color = c, 0f, 0.25f));
-                fadeSeq.Join(go.transform.DOScale(0.7f, 0.25f).SetEase(Ease.InQuad));
-            }
-            yield return fadeSeq.WaitForCompletion();
-
-            foreach (var go in cards)
-                Destroy(go);
-        }
-
-        // ══════ CARD DEAL ANIMATION ══════
-        private IEnumerator AnimateCardDeal(List<PlayerState> activePlayers, int dealerSeat)
-        {
-            EnsureAnimationRefs();
-            if (_animLayer == null || _cardBackSprite == null || activePlayers == null || activePlayers.Count == 0)
-                yield break;
-
-            activePlayers = BuildDealOrderClockwise(activePlayers, dealerSeat);
-            PlayDealShuffleSound();
-
-            // Hide real cards on all seats being dealt to
-            foreach (var player in activePlayers)
-            {
-                int idx = SeatToViewIndex(player.Seat);
-                if (idx < 0 || idx >= _seatViews.Length) continue;
-                _seatViews[idx].SetCardsVisible(false);
-            }
-
-            // Deal cards one by one in a visible clockwise rhythm.
-            float stagger = 0.09f;
-            float travelDuration = 0.3f;
-            var flyingCards = new List<GameObject>();
-
-            // Two rounds: first card to each player, then second card
-            for (int round = 0; round < 2; round++)
-            {
-                foreach (var player in activePlayers)
-                {
-                    int idx = SeatToViewIndex(player.Seat);
-                    if (idx < 0 || idx >= _seatViews.Length) continue;
-                    var seat = _seatViews[idx];
-
-                    var cardGO = new GameObject($"DealCard_{player.Seat}_{round}", typeof(RectTransform));
-                    cardGO.transform.SetParent(_animLayer, false);
-                    var img = cardGO.AddComponent<Image>();
-                    img.sprite = _cardBackSprite;
-                    img.preserveAspect = true;
-                    img.raycastTarget = false;
-
-                    var rt = cardGO.GetComponent<RectTransform>();
-                    rt.sizeDelta = new Vector2(44, 62);
-                    cardGO.transform.SetAsLastSibling();
-
-                    // Start at dealer
-                    Vector3 startPos = _dealerSource != null
-                        ? _dealerSource.position
-                        : transform.position + new Vector3(0f, 180f, 0f);
-                    cardGO.transform.position = startPos;
-                    rt.localScale = Vector3.one * 0.3f;
-
-                    // Target: seat's card area
-                    Vector3 targetPos = seat.CardAreaWorldPosition + new Vector3(round == 0 ? -12f : 12f, round == 0 ? 2f : -2f, 0f);
-
-                    // Animate in a gentle arc so travel is obvious.
-                    float targetAngle = round == 0 ? -10f : 10f;
-                    if (targetPos.x > startPos.x) targetAngle += 4f;
-
-                    var seq = DOTween.Sequence();
-                    seq.Append(CreateArcMoveTween(rt, startPos, targetPos, travelDuration));
-                    seq.Join(rt.DOScale(Vector3.one, travelDuration).SetEase(Ease.OutCubic));
-                    seq.Join(rt.DORotate(new Vector3(0f, 0f, targetAngle), travelDuration).SetEase(Ease.OutQuad));
-
-                    flyingCards.Add(cardGO);
-
-                    yield return new WaitForSeconds(stagger);
-                }
-            }
-
-            // Wait for last animation to finish
-            yield return new WaitForSeconds(0.35f);
-
-            // Destroy flying cards and show real cards
-            foreach (var go in flyingCards)
-            {
-                if (go != null) Destroy(go);
-            }
-
-            foreach (var player in activePlayers)
-            {
-                int idx = SeatToViewIndex(player.Seat);
-                if (idx < 0 || idx >= _seatViews.Length) continue;
-                _seatViews[idx].SetCardsVisible(true);
-            }
-        }
-
-        private List<PlayerState> BuildDealOrderClockwise(List<PlayerState> players, int dealerSeat)
+        private void UpdateFoldSounds(List<PlayerState> players)
         {
             if (players == null || players.Count == 0)
-                return new List<PlayerState>();
-
-            var validPlayers = players
-                .Where(p => p.Seat > 0)
-                .ToList();
-
-            if (validPlayers.Count <= 1 || dealerSeat <= 0)
-                return validPlayers;
-
-            var clockwiseSeats = GetClockwiseSeatOrder(validPlayers.Select(p => p.Seat));
-            if (clockwiseSeats.Count == 0)
-                return validPlayers;
-
-            int startIdx = clockwiseSeats.IndexOf(dealerSeat);
-            if (startIdx < 0) startIdx = 0;
-            startIdx = (startIdx + 1) % clockwiseSeats.Count; // first card starts left of dealer
-
-            var bySeat = validPlayers.ToDictionary(p => p.Seat, p => p);
-            var ordered = new List<PlayerState>(clockwiseSeats.Count);
-            for (int i = 0; i < clockwiseSeats.Count; i++)
             {
-                int seat = clockwiseSeats[(startIdx + i) % clockwiseSeats.Count];
-                if (bySeat.TryGetValue(seat, out var player))
-                    ordered.Add(player);
-            }
-
-            return ordered;
-        }
-
-        private List<int> GetClockwiseSeatOrder(IEnumerable<int> seats)
-        {
-            if (seats == null) return new List<int>();
-
-            Vector3 center = _potTarget != null ? _potTarget.position : transform.position;
-
-            return seats
-                .Distinct()
-                .Where(seat =>
-                {
-                    int idx = SeatToViewIndex(seat);
-                    return seat > 0 && idx >= 0 && idx < _seatViews.Length && _seatViews[idx] != null;
-                })
-                .Select(seat =>
-                {
-                    int idx = SeatToViewIndex(seat);
-                    Vector3 p = _seatViews[idx].transform.position - center;
-                    float angle = Mathf.Atan2(p.y, p.x); // radians
-                    return new { seat, angle };
-                })
-                .OrderByDescending(x => x.angle) // descending angle = clockwise traversal in screen space
-                .Select(x => x.seat)
-                .ToList();
-        }
-
-        private static Tween CreateArcMoveTween(RectTransform card, Vector3 start, Vector3 end, float duration)
-        {
-            float height = Mathf.Clamp(Vector3.Distance(start, end) * 0.12f, 30f, 96f);
-            Vector3 control = (start + end) * 0.5f + new Vector3(0f, height, 0f);
-
-            return DOVirtual.Float(0f, 1f, duration, t =>
-            {
-                float u = 1f - t;
-                card.position = (u * u * start) + (2f * u * t * control) + (t * t * end);
-            }).SetEase(Ease.OutCubic);
-        }
-
-        // ══════ CENTER POT DISPLAY ══════
-        private void UpdateCenterPot(float pot)
-        {
-            if (_centerPotText == null) return;
-
-            DOTween.Kill(_centerPotText);
-            if (pot <= 0)
-            {
-                _centerPotText.text = "";
-                _displayedPot = 0;
-                UpdatePotChips(0);
+                _prevFoldedSeats.Clear();
                 return;
             }
 
-            DOVirtual.Float(_displayedPot, pot, 0.5f, value =>
+            var currentFoldedSeats = new HashSet<int>();
+            bool hasNewFold = false;
+
+            foreach (var player in players)
             {
-                _displayedPot = value;
-                _centerPotText.text = $"POT: {MoneyFormatter.Format(value)}";
-            }).SetEase(Ease.OutCubic).SetTarget(_centerPotText);
+                if (player == null || player.Seat <= 0) continue;
 
-            UpdatePotChips(pot);
-        }
+                bool isFoldedNow = player.IsFolded ||
+                                   (!string.IsNullOrEmpty(player.Action) &&
+                                    player.Action.Equals("fold", StringComparison.OrdinalIgnoreCase));
+                if (!isFoldedNow) continue;
 
-        private void UpdatePotChips(float pot)
-        {
-            if (_potTarget == null || _chipFlySprite == null) return;
-
-            // Determine how many chip stacks to show based on pot size
-            // Thresholds: $5=1, $15=2, $30=3, $50=4, $80=5, $120+=6
-            int targetCount = 0;
-            if (pot >= 5) targetCount = 1;
-            if (pot >= 15) targetCount = 2;
-            if (pot >= 30) targetCount = 3;
-            if (pot >= 50) targetCount = 4;
-            if (pot >= 80) targetCount = 5;
-            if (pot >= 120) targetCount = 6;
-
-            // Remove excess chips
-            while (_potChips.Count > targetCount)
-            {
-                var chip = _potChips[_potChips.Count - 1];
-                _potChips.RemoveAt(_potChips.Count - 1);
-                if (chip != null) Destroy(chip);
+                currentFoldedSeats.Add(player.Seat);
+                if (!_isFirstState && !_prevFoldedSeats.Contains(player.Seat))
+                    hasNewFold = true;
             }
 
-            // Add new chips stacked below community cards, piled with slight offsets
-            while (_potChips.Count < targetCount)
-            {
-                int i = _potChips.Count;
-                var chipGO = new GameObject($"PotChip_{i}", typeof(RectTransform));
-                chipGO.transform.SetParent(_potTarget, false);
-                var img = chipGO.AddComponent<Image>();
-                img.sprite = _chipFlySprite;
-                img.preserveAspect = true;
-                var rt = chipGO.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(32, 32);
+            if (hasNewFold)
+                _audio.PlayFoldSound();
 
-                // Stack chips vertically like a pile, each slightly offset
-                // so they look like stacked poker chips
-                float x = (i % 2 == 0 ? -1 : 1) * (i / 2) * 8f; // slight horizontal scatter
-                float y = i * 4f; // stack upward, each chip offset a bit
-                rt.anchoredPosition = new Vector2(x, y);
-
-                // Later chips render on top
-                chipGO.transform.SetAsLastSibling();
-
-                // Pop-in animation
-                chipGO.transform.localScale = Vector3.zero;
-                chipGO.transform.DOScale(1f, 0.3f).SetEase(Ease.OutBack);
-
-                _potChips.Add(chipGO);
-            }
-        }
-
-        private void OnDestroy()
-        {
-            StopTurnTimer();
-            _restartButtonDelayTween?.Kill();
-            if (_centerPotText != null) DOTween.Kill(_centerPotText);
-            if (_loadingOverlayGroup != null) DOTween.Kill(_loadingOverlayGroup);
-            foreach (var chip in _potChips)
-                if (chip != null) Destroy(chip);
-            _potChips.Clear();
+            _prevFoldedSeats = currentFoldedSeats;
         }
 
         private void EnsureAnimationRefs()
@@ -966,639 +457,14 @@ namespace HijackPoker.UI
             ).SetEase(Ease.OutQuad);
         }
 
-        private void UpdateTurnTimer(TableResponse state)
-        {
-            if (state == null || state.Game == null) return;
-
-            bool isBettingStep = IsBettingStep(state.Game.HandStep);
-            int moveSeat = state.Game.Move;
-
-            if (!isBettingStep || moveSeat <= 0)
-            {
-                StopTurnTimer();
-                return;
-            }
-
-            bool changed = _turnTimerRoutine == null ||
-                           _turnTimerSeat != moveSeat ||
-                           _turnTimerStep != state.Game.HandStep ||
-                           _turnTimerGameNo != state.Game.GameNo;
-            if (!changed) return;
-
-            StopTurnTimer();
-            _turnTimerSeat = moveSeat;
-            _turnTimerStep = state.Game.HandStep;
-            _turnTimerGameNo = state.Game.GameNo;
-            _hasPlayedLowTimeWarning = false;
-            PlayTurnStartSound();
-            _turnTimerRoutine = StartCoroutine(TurnTimerCoroutine(_turnTimerSeat, _turnTimerStep, _turnTimerGameNo));
-        }
-
-        private IEnumerator TurnTimerCoroutine(int seat, int step, int gameNo)
-        {
-            float remaining = TurnDurationSeconds;
-            while (remaining > 0f)
-            {
-                float normalized = remaining / TurnDurationSeconds;
-                ShowTurnTimerOnSeat(seat, normalized);
-
-                if (!_hasPlayedLowTimeWarning && remaining <= LowTimeWarningSeconds)
-                {
-                    _hasPlayedLowTimeWarning = true;
-                    PlayTimeRemainingSound();
-                }
-
-                remaining -= Time.deltaTime;
-                yield return null;
-            }
-
-            ShowTurnTimerOnSeat(seat, 0f);
-
-            var current = _stateManager != null ? _stateManager.CurrentState : null;
-            bool stillSameTurn = current != null &&
-                                 current.Game != null &&
-                                 current.Game.GameNo == gameNo &&
-                                 current.Game.HandStep == step &&
-                                 current.Game.Move == seat &&
-                                 IsBettingStep(current.Game.HandStep);
-            if (stillSameTurn && _gameManager != null)
-            {
-                _ = _gameManager.AdvanceStepAsync("fold", 0f);
-            }
-        }
-
-        private void StopTurnTimer()
-        {
-            if (_turnTimerRoutine != null)
-            {
-                StopCoroutine(_turnTimerRoutine);
-                _turnTimerRoutine = null;
-            }
-            ClearTurnTimers();
-            StopTimeRemainingSound();
-            _turnTimerSeat = -1;
-            _turnTimerStep = -1;
-            _turnTimerGameNo = -1;
-            _hasPlayedLowTimeWarning = false;
-        }
-
-        private void ShowTurnTimerOnSeat(int seat, float normalized)
-        {
-            for (int i = 0; i < _seatViews.Length; i++)
-            {
-                if (_seatViews[i] == null) continue;
-                bool active = i == SeatToViewIndex(seat);
-                _seatViews[i].SetTurnTimer(active, normalized);
-            }
-        }
-
-        private void ClearTurnTimers()
-        {
-            for (int i = 0; i < _seatViews.Length; i++)
-            {
-                if (_seatViews[i] == null) continue;
-                _seatViews[i].SetTurnTimer(false, 0f);
-            }
-        }
-
-        private static bool IsBettingStep(int step)
-        {
-            return step == 5 || step == 7 || step == 9 || step == 11;
-        }
-
-        private void EnsureAudioRefs()
-        {
-            if (_sfxAudioSource == null)
-                _sfxAudioSource = GetComponent<AudioSource>();
-            if (_sfxAudioSource == null)
-                _sfxAudioSource = gameObject.AddComponent<AudioSource>();
-        }
-
-        private void TryResolveTurnStartSound()
-        {
-            if (_turnStartSound != null) return;
-
-            var cardThemeManager = FindObjectOfType<CardThemeManager>();
-            if (cardThemeManager != null)
-            {
-                var clipField = typeof(CardThemeManager).GetField("winSound", BindingFlags.Instance | BindingFlags.NonPublic);
-                var sourceField = typeof(CardThemeManager).GetField("sfxAudioSource", BindingFlags.Instance | BindingFlags.NonPublic);
-
-                _turnStartSound = clipField?.GetValue(cardThemeManager) as AudioClip;
-                if (_sfxAudioSource == null)
-                    _sfxAudioSource = sourceField?.GetValue(cardThemeManager) as AudioSource;
-            }
-
-            if (_turnStartSound == null)
-                _turnStartSound = Resources.Load<AudioClip>("Audio/win_01");
-            if (_timeRemainingSound == null)
-                _timeRemainingSound = Resources.Load<AudioClip>("Audio/time_remaning");
-        }
-
-        private void TryResolveDealAndFoldSounds()
-        {
-            if (_dealShuffleSound == null)
-                _dealShuffleSound = Resources.Load<AudioClip>("Audio/card_shuffle_custom");
-            if (_foldSound == null)
-                _foldSound = Resources.Load<AudioClip>("Audio/hover_01");
-            _chipBetSound = Resources.Load<AudioClip>("Audio/chips");
-            _crowdClapSound = Resources.Load<AudioClip>("Audio/crowd-clap");
-        }
-
-        private void PlayTurnStartSound()
-        {
-            if (_turnStartSound == null) return;
-            EnsureAudioRefs();
-            if (_sfxAudioSource == null) return;
-            _sfxAudioSource.PlayOneShot(_turnStartSound);
-        }
-
-        private void PlayTimeRemainingSound()
-        {
-            if (_timeRemainingSound == null) return;
-            EnsureAudioRefs();
-            if (_sfxAudioSource == null) return;
-
-            if (_timeWarningAudioSource == null)
-            {
-                _timeWarningAudioSource = gameObject.AddComponent<AudioSource>();
-                _timeWarningAudioSource.playOnAwake = false;
-            }
-            _timeWarningAudioSource.clip = _timeRemainingSound;
-            _timeWarningAudioSource.Play();
-        }
-
-        private void StopTimeRemainingSound()
-        {
-            if (_timeWarningAudioSource != null && _timeWarningAudioSource.isPlaying)
-                _timeWarningAudioSource.Stop();
-        }
-
-        private void PlayDealShuffleSound()
-        {
-            if (_dealShuffleSound == null) return;
-            EnsureAudioRefs();
-            if (_sfxAudioSource == null) return;
-            _sfxAudioSource.PlayOneShot(_dealShuffleSound);
-        }
-
-        private void PlayFoldSound()
-        {
-            if (_foldSound == null) return;
-            EnsureAudioRefs();
-            if (_sfxAudioSource == null) return;
-            _sfxAudioSource.PlayOneShot(_foldSound);
-        }
-
-        private void PlayChipBetSound()
-        {
-            if (_chipBetSound == null) return;
-            if (Time.unscaledTime - _lastChipSoundTime < ChipSoundCooldownSeconds) return;
-            EnsureAudioRefs();
-            if (_sfxAudioSource == null) return;
-
-            _lastChipSoundTime = Time.unscaledTime;
-            _sfxAudioSource.PlayOneShot(_chipBetSound);
-        }
-
-        private void UpdateWinnerCelebration(TableResponse state)
-        {
-            if (state == null || state.Game == null || state.Players == null) return;
-            if (state.Game.HandStep < 13) return;
-
-            var winners = state.Players.Where(p => p != null && p.IsWinner && p.Seat > 0).ToList();
-            if (winners.Count == 0) return;
-            if (_celebratedGameNo == state.Game.GameNo) return;
-
-            _celebratedGameNo = state.Game.GameNo;
-
-            // Play crowd clap sound only, no visual celebration
-            if (_sfxAudioSource != null && _crowdClapSound != null)
-                _sfxAudioSource.PlayOneShot(_crowdClapSound);
-        }
-
-        private void StartWinnerCelebration(List<PlayerState> winners)
-        {
-            EnsureCelebrationUI();
-            if (_celebrationRoot == null || winners == null || winners.Count == 0) return;
-
-            _celebrationRoot.gameObject.SetActive(true);
-            _winnerAvatarImage.gameObject.SetActive(true);
-            if (_winnerBannerPlate != null) _winnerBannerPlate.gameObject.SetActive(true);
-            _winnerBannerText.gameObject.SetActive(true);
-            _restartHandButton.gameObject.SetActive(false);
-            _restartButtonDelayTween?.Kill();
-
-            var primaryWinner = winners[0];
-            string handRank = !string.IsNullOrEmpty(primaryWinner.HandRank) ? primaryWinner.HandRank : "";
-            string winAmount = primaryWinner.Winnings > 0 ? $"  {MoneyFormatter.FormatGain(primaryWinner.Winnings)}" : "";
-
-            if (winners.Count == 1)
-            {
-                string line1 = $"WINNER: {primaryWinner.Username?.ToUpper() ?? "PLAYER"}";
-                string line2 = "";
-                if (!string.IsNullOrEmpty(handRank))
-                    line2 += handRank;
-                if (!string.IsNullOrEmpty(winAmount))
-                    line2 += (line2.Length > 0 ? "  |  " : "") + $"<color=#4AE86C>{winAmount.Trim()}</color>";
-                _winnerBannerText.text = string.IsNullOrEmpty(line2) ? line1 : $"{line1}\n<size=22>{line2}</size>";
-            }
-            else
-            {
-                var lines = new List<string> { $"SPLIT POT: {winners.Count} WINNERS" };
-                foreach (var w in winners)
-                {
-                    string wRank = !string.IsNullOrEmpty(w.HandRank) ? $" ({w.HandRank})" : "";
-                    string wAmount = w.Winnings > 0 ? $" <color=#4AE86C>{MoneyFormatter.FormatGain(w.Winnings)}</color>" : "";
-                    lines.Add($"<size=20>{w.Username}{wRank}{wAmount}</size>");
-                }
-                _winnerBannerText.text = string.Join("\n", lines);
-            }
-            SetWinnerCards(primaryWinner);
-
-            if (_seatAvatars.TryGetValue(primaryWinner.Seat, out var avatar) && avatar != null)
-                _winnerAvatarImage.sprite = avatar;
-            if (_winnerAvatarMaskImage != null && _chipFlySprite != null)
-                _winnerAvatarMaskImage.sprite = _chipFlySprite;
-
-            int winnerIdx = SeatToViewIndex(primaryWinner.Seat);
-            Vector3 startPos = (_potTarget != null) ? _potTarget.position : transform.position;
-            if (winnerIdx >= 0 && winnerIdx < _seatViews.Length && _seatViews[winnerIdx] != null)
-                startPos = _seatViews[winnerIdx].transform.position;
-            Vector3 targetPos = _potTarget != null ? _potTarget.position : transform.position;
-
-            _winnerAvatarMaskImage.rectTransform.position = startPos;
-            _winnerAvatarMaskImage.rectTransform.localScale = Vector3.one * 0.72f;
-            _winnerAvatarImage.color = new Color(1f, 1f, 1f, 0f);
-            if (_focusBackdrop != null)
-                _focusBackdrop.color = new Color(0.03f, 0.06f, 0.10f, 0f);
-            if (_winnerBannerPlate != null)
-                _winnerBannerPlate.color = new Color(0.09f, 0.16f, 0.25f, 0f);
-
-            DOTween.Sequence()
-                .Append(_focusBackdrop != null
-                    ? DOTween.ToAlpha(() => _focusBackdrop.color, c => _focusBackdrop.color = c, 0.62f, 0.22f)
-                    : DOVirtual.DelayedCall(0f, () => { }))
-                .Append(DOTween.ToAlpha(
-                    () => _winnerAvatarImage.color,
-                    c => _winnerAvatarImage.color = c,
-                    1f,
-                    0.16f))
-                .Join(_winnerAvatarMaskImage.rectTransform.DOMove(targetPos, 0.48f).SetEase(Ease.OutBack))
-                .Join(_winnerAvatarMaskImage.rectTransform.DOScale(1.26f, 0.48f).SetEase(Ease.OutBack))
-                .Append(_winnerAvatarMaskImage.rectTransform.DOScale(1.1f, 0.18f).SetEase(Ease.OutQuad));
-
-            _winnerBannerText.alpha = 0f;
-            _winnerBannerText.transform.localScale = Vector3.one * 0.82f;
-            DOTween.Sequence()
-                .AppendInterval(0.22f)
-                .Append(_winnerBannerPlate != null
-                    ? DOTween.ToAlpha(() => _winnerBannerPlate.color, c => _winnerBannerPlate.color = c, 0.92f, 0.16f)
-                    : DOVirtual.DelayedCall(0f, () => { }))
-                .Append(DOTween.ToAlpha(
-                    () => _winnerBannerText.color,
-                    c => _winnerBannerText.color = c,
-                    1f,
-                    0.22f))
-                .Join(_winnerBannerText.transform.DOScale(1f, 0.22f).SetEase(Ease.OutBack));
-
-            if (_winnerCard1Image != null && _winnerCard2Image != null)
-            {
-                var c1 = _winnerCard1Image.color; c1.a = 0f; _winnerCard1Image.color = c1;
-                var c2 = _winnerCard2Image.color; c2.a = 0f; _winnerCard2Image.color = c2;
-                _winnerCard1Image.transform.localScale = Vector3.one * 0.86f;
-                _winnerCard2Image.transform.localScale = Vector3.one * 0.86f;
-
-                DOTween.Sequence()
-                    .AppendInterval(0.18f)
-                    .Append(DOTween.ToAlpha(() => _winnerCard1Image.color, v => _winnerCard1Image.color = v, 1f, 0.18f))
-                    .Join(_winnerCard1Image.transform.DOScale(1f, 0.22f).SetEase(Ease.OutBack))
-                    .Join(DOTween.ToAlpha(() => _winnerCard2Image.color, v => _winnerCard2Image.color = v, 1f, 0.18f))
-                    .Join(_winnerCard2Image.transform.DOScale(1f, 0.22f).SetEase(Ease.OutBack));
-            }
-
-            SpawnConfettiBurst(56);
-
-            // Play crowd clap sound
-            if (_sfxAudioSource != null && _crowdClapSound != null)
-                _sfxAudioSource.PlayOneShot(_crowdClapSound);
-
-            _restartButtonDelayTween = DOVirtual.DelayedCall(RestartButtonDelaySeconds, () =>
-            {
-                if (_restartHandButton == null) return;
-                _restartHandButton.gameObject.SetActive(true);
-                _restartHandButton.transform.localScale = Vector3.one * 0.84f;
-                _restartHandButton.transform.DOScale(1f, 0.2f).SetEase(Ease.OutBack);
-            });
-        }
-
-        private void HideWinnerCelebration()
-        {
-            _restartButtonDelayTween?.Kill();
-            if (_celebrationRoot != null)
-                _celebrationRoot.gameObject.SetActive(false);
-        }
-
-        private void EnsureCelebrationUI()
-        {
-            EnsureAnimationRefs();
-            if (_celebrationRoot != null) return;
-            if (_animLayer == null) return;
-
-            var rootGO = new GameObject("WinnerCelebration", typeof(RectTransform), typeof(CanvasGroup));
-            rootGO.transform.SetParent(_animLayer, false);
-            _celebrationRoot = rootGO.GetComponent<RectTransform>();
-            _celebrationRoot.anchorMin = Vector2.zero;
-            _celebrationRoot.anchorMax = Vector2.one;
-            _celebrationRoot.offsetMin = Vector2.zero;
-            _celebrationRoot.offsetMax = Vector2.zero;
-
-            var backdropGO = new GameObject("FocusBackdrop", typeof(RectTransform), typeof(Image));
-            backdropGO.transform.SetParent(_celebrationRoot, false);
-            var backdropRt = backdropGO.GetComponent<RectTransform>();
-            backdropRt.anchorMin = Vector2.zero;
-            backdropRt.anchorMax = Vector2.one;
-            backdropRt.offsetMin = Vector2.zero;
-            backdropRt.offsetMax = Vector2.zero;
-            _focusBackdrop = backdropGO.GetComponent<Image>();
-            _focusBackdrop.color = new Color(0.03f, 0.06f, 0.10f, 0f);
-            _focusBackdrop.raycastTarget = false;
-
-            var confettiGO = new GameObject("ConfettiLayer", typeof(RectTransform));
-            confettiGO.transform.SetParent(_celebrationRoot, false);
-            _confettiLayer = confettiGO.GetComponent<RectTransform>();
-            _confettiLayer.anchorMin = Vector2.zero;
-            _confettiLayer.anchorMax = Vector2.one;
-            _confettiLayer.offsetMin = Vector2.zero;
-            _confettiLayer.offsetMax = Vector2.zero;
-
-            var avatarMaskGO = new GameObject("WinnerAvatarCircle", typeof(RectTransform), typeof(Image), typeof(Mask));
-            avatarMaskGO.transform.SetParent(_celebrationRoot, false);
-            var avatarMaskRT = avatarMaskGO.GetComponent<RectTransform>();
-            avatarMaskRT.sizeDelta = new Vector2(110f, 110f);
-            _winnerAvatarMaskImage = avatarMaskGO.GetComponent<Image>();
-            _winnerAvatarMaskImage.sprite = _chipFlySprite;
-            _winnerAvatarMaskImage.type = Image.Type.Simple;
-            _winnerAvatarMaskImage.preserveAspect = true;
-            _winnerAvatarMaskImage.color = Color.white;
-            var mask = avatarMaskGO.GetComponent<Mask>();
-            mask.showMaskGraphic = false;
-
-            var avatarGO = new GameObject("WinnerAvatar", typeof(RectTransform), typeof(Image));
-            avatarGO.transform.SetParent(avatarMaskGO.transform, false);
-            var avatarRT = avatarGO.GetComponent<RectTransform>();
-            avatarRT.anchorMin = Vector2.zero;
-            avatarRT.anchorMax = Vector2.one;
-            avatarRT.offsetMin = Vector2.zero;
-            avatarRT.offsetMax = Vector2.zero;
-            _winnerAvatarImage = avatarGO.GetComponent<Image>();
-            _winnerAvatarImage.preserveAspect = true;
-            _winnerAvatarImage.raycastTarget = false;
-            _winnerAvatarImage.color = new Color(1f, 1f, 1f, 0f);
-
-            var ringGO = new GameObject("WinnerAvatarRing", typeof(RectTransform), typeof(Image));
-            ringGO.transform.SetParent(avatarMaskGO.transform, false);
-            var ringRT = ringGO.GetComponent<RectTransform>();
-            ringRT.anchorMin = new Vector2(0.5f, 0.5f);
-            ringRT.anchorMax = new Vector2(0.5f, 0.5f);
-            ringRT.pivot = new Vector2(0.5f, 0.5f);
-            ringRT.anchoredPosition = Vector2.zero;
-            ringRT.sizeDelta = avatarMaskRT.sizeDelta + new Vector2(14f, 14f);
-            var ring = ringGO.GetComponent<Image>();
-            ring.sprite = _chipFlySprite;
-            ring.color = new Color(1f, 0.86f, 0.44f, 0.95f);
-            ring.raycastTarget = false;
-
-            var bannerPlateGO = new GameObject("WinnerBannerPlate", typeof(RectTransform), typeof(Image));
-            bannerPlateGO.transform.SetParent(_celebrationRoot, false);
-            var plateRT = bannerPlateGO.GetComponent<RectTransform>();
-            plateRT.anchorMin = new Vector2(0.5f, 0.5f);
-            plateRT.anchorMax = new Vector2(0.5f, 0.5f);
-            plateRT.pivot = new Vector2(0.5f, 0.5f);
-            plateRT.anchoredPosition = new Vector2(0f, -80f);
-            plateRT.sizeDelta = new Vector2(520f, 100f);
-            _winnerBannerPlate = bannerPlateGO.GetComponent<Image>();
-            _winnerBannerPlate.color = new Color(0.09f, 0.16f, 0.25f, 0f);
-            _winnerBannerPlate.raycastTarget = false;
-
-            var cardsGO = new GameObject("WinnerCards", typeof(RectTransform));
-            cardsGO.transform.SetParent(_celebrationRoot, false);
-            var cardsRT = cardsGO.GetComponent<RectTransform>();
-            cardsRT.anchorMin = new Vector2(0.5f, 0.5f);
-            cardsRT.anchorMax = new Vector2(0.5f, 0.5f);
-            cardsRT.pivot = new Vector2(0.5f, 0.5f);
-            cardsRT.anchoredPosition = new Vector2(0f, -12f);
-            cardsRT.sizeDelta = new Vector2(210f, 110f);
-
-            _winnerCard1Image = CreateWinnerCardImage(cardsRT, new Vector2(-32f, 0f), -8f);
-            _winnerCard2Image = CreateWinnerCardImage(cardsRT, new Vector2(32f, 0f), 8f);
-
-            var textGO = new GameObject("WinnerBanner", typeof(RectTransform), typeof(TextMeshProUGUI));
-            textGO.transform.SetParent(bannerPlateGO.transform, false);
-            var textRT = textGO.GetComponent<RectTransform>();
-            textRT.anchorMin = new Vector2(0.5f, 0.5f);
-            textRT.anchorMax = new Vector2(0.5f, 0.5f);
-            textRT.pivot = new Vector2(0.5f, 0.5f);
-            textRT.anchoredPosition = Vector2.zero;
-            textRT.sizeDelta = new Vector2(480f, 90f);
-            _winnerBannerText = textGO.GetComponent<TextMeshProUGUI>();
-            _winnerBannerText.alignment = TextAlignmentOptions.Center;
-            _winnerBannerText.fontSize = 34;
-            _winnerBannerText.fontStyle = FontStyles.Bold;
-            _winnerBannerText.color = new Color(1f, 0.95f, 0.70f, 0f);
-            _winnerBannerText.raycastTarget = false;
-
-            _restartHandButton = CreateRestartButton(_celebrationRoot);
-            _restartHandButton.gameObject.SetActive(false);
-            _restartHandButton.onClick.AddListener(OnRestartHandClicked);
-
-            _celebrationRoot.gameObject.SetActive(false);
-        }
-
-        private Image CreateWinnerCardImage(RectTransform parent, Vector2 anchoredPos, float zRotation)
-        {
-            var go = new GameObject("WinnerCard", typeof(RectTransform), typeof(Image));
-            go.transform.SetParent(parent, false);
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = anchoredPos;
-            rt.sizeDelta = new Vector2(72f, 100f);
-            rt.localRotation = Quaternion.Euler(0f, 0f, zRotation);
-
-            var img = go.GetComponent<Image>();
-            img.preserveAspect = true;
-            img.raycastTarget = false;
-            img.color = new Color(1f, 1f, 1f, 0f);
-            return img;
-        }
-
-        private void SetWinnerCards(PlayerState winner)
-        {
-            if (_winnerCard1Image == null || _winnerCard2Image == null) return;
-
-            var back = Resources.Load<Sprite>("Cards/cardBack_red2");
-            _winnerCard1Image.sprite = back;
-            _winnerCard2Image.sprite = back;
-
-            if (winner == null || winner.Cards == null || winner.Cards.Count < 2) return;
-
-            _winnerCard1Image.sprite = LoadCardSprite(winner.Cards[0]) ?? back;
-            _winnerCard2Image.sprite = LoadCardSprite(winner.Cards[1]) ?? back;
-        }
-
-        private static Sprite LoadCardSprite(string cardCode)
-        {
-            var (rank, suit) = CardUtils.ParseCard(cardCode);
-            if (string.IsNullOrEmpty(rank) || string.IsNullOrEmpty(suit))
-                return null;
-
-            string suitName = CardSuitNames.TryGetValue(suit, out var mapped) ? mapped : suit;
-            string spriteName = $"card{suitName}{rank}";
-            return Resources.Load<Sprite>($"Cards/{spriteName}");
-        }
-
-        private Button CreateRestartButton(RectTransform parent)
-        {
-            var buttonGO = new GameObject("RestartHandButton", typeof(RectTransform), typeof(Image), typeof(Button));
-            buttonGO.transform.SetParent(parent, false);
-            var rt = buttonGO.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(0f, -160f);
-            rt.sizeDelta = new Vector2(220f, 52f);
-
-            var img = buttonGO.GetComponent<Image>();
-            img.color = new Color(0.15f, 0.56f, 0.91f, 0.96f);
-
-            var labelGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
-            labelGO.transform.SetParent(buttonGO.transform, false);
-            var labelRt = labelGO.GetComponent<RectTransform>();
-            labelRt.anchorMin = Vector2.zero;
-            labelRt.anchorMax = Vector2.one;
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
-
-            var label = labelGO.GetComponent<TextMeshProUGUI>();
-            label.text = "NEXT HAND";
-            label.alignment = TextAlignmentOptions.Center;
-            label.fontSize = 22;
-            label.fontStyle = FontStyles.Bold;
-            label.color = Color.white;
-            label.raycastTarget = false;
-
-            return buttonGO.GetComponent<Button>();
-        }
-
-        private void OnRestartHandClicked()
-        {
-            HideWinnerCelebration();
-            if (_gameManager != null)
-                _ = _gameManager.AdvanceStepAsync();
-        }
-
-        private void SpawnConfettiBurst(int count)
-        {
-            if (_confettiLayer == null || _celebrationRoot == null) return;
-
-            for (int i = _confettiLayer.childCount - 1; i >= 0; i--)
-                Destroy(_confettiLayer.GetChild(i).gameObject);
-
-            float width = _celebrationRoot.rect.width;
-            float height = _celebrationRoot.rect.height;
-            if (width <= 0f || height <= 0f)
-            {
-                width = Screen.width;
-                height = Screen.height;
-            }
-
-            Color[] colors =
-            {
-                new Color(1f, 0.34f, 0.33f),
-                new Color(0.99f, 0.80f, 0.28f),
-                new Color(0.32f, 0.87f, 0.56f),
-                new Color(0.29f, 0.70f, 0.98f),
-                new Color(0.93f, 0.47f, 0.95f)
-            };
-
-            for (int i = 0; i < count; i++)
-            {
-                var go = new GameObject($"Confetti_{i}", typeof(RectTransform), typeof(Image));
-                go.transform.SetParent(_confettiLayer, false);
-
-                var rt = go.GetComponent<RectTransform>();
-                float sizeX = UnityEngine.Random.Range(6f, 12f);
-                float sizeY = UnityEngine.Random.Range(8f, 20f);
-                rt.sizeDelta = new Vector2(sizeX, sizeY);
-                rt.anchoredPosition = new Vector2(
-                    UnityEngine.Random.Range(-width * 0.48f, width * 0.48f),
-                    UnityEngine.Random.Range(height * 0.35f, height * 0.52f));
-                rt.localRotation = Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(0f, 360f));
-
-                var img = go.GetComponent<Image>();
-                img.color = colors[UnityEngine.Random.Range(0, colors.Length)];
-                img.raycastTarget = false;
-
-                float fall = UnityEngine.Random.Range(1.1f, 1.95f);
-                float xDrift = UnityEngine.Random.Range(-80f, 80f);
-                DOTween.To(
-                    () => rt.anchoredPosition,
-                    p => rt.anchoredPosition = p,
-                    new Vector2(rt.anchoredPosition.x + xDrift, -height * 0.58f),
-                    fall
-                ).SetEase(Ease.InQuad);
-                rt.DORotate(new Vector3(0f, 0f, UnityEngine.Random.Range(-420f, 420f)), fall, RotateMode.FastBeyond360)
-                    .SetEase(Ease.Linear);
-                DOTween.ToAlpha(
-                    () => img.color,
-                    c => img.color = c,
-                    0f,
-                    fall * 0.85f).SetDelay(fall * 0.15f);
-                DOVirtual.DelayedCall(fall + 0.08f, () => { if (go != null) Destroy(go); });
-            }
-        }
-
-        private void UpdateFoldSounds(List<PlayerState> players)
-        {
-            if (players == null || players.Count == 0)
-            {
-                _prevFoldedSeats.Clear();
-                return;
-            }
-
-            var currentFoldedSeats = new HashSet<int>();
-            bool hasNewFold = false;
-
-            foreach (var player in players)
-            {
-                if (player == null || player.Seat <= 0) continue;
-
-                bool isFoldedNow = player.IsFolded ||
-                                   (!string.IsNullOrEmpty(player.Action) &&
-                                    player.Action.Equals("fold", StringComparison.OrdinalIgnoreCase));
-                if (!isFoldedNow) continue;
-
-                currentFoldedSeats.Add(player.Seat);
-                if (!_isFirstState && !_prevFoldedSeats.Contains(player.Seat))
-                    hasNewFold = true;
-            }
-
-            if (hasNewFold)
-                PlayFoldSound();
-
-            _prevFoldedSeats = currentFoldedSeats;
-        }
+        private static bool IsBettingStep(int step) => PokerConstants.IsBettingStep(step);
 
         private int SeatToViewIndex(int seat)
         {
             if (seat <= 0 || _seatViews == null || _seatViews.Length == 0) return -1;
-            // Keep local player anchored at bottom-right (view index 0),
-            // then place others clockwise around the table.
             if (_seatViews.Length == 6)
             {
-                int rel = ((seat - _localSeat) % 6 + 6) % 6; // clockwise distance from local seat
+                int rel = ((seat - _localSeat) % 6 + 6) % 6;
                 int[] relativeToView = { 0, 4, 5, 1, 2, 3 };
                 int idx = relativeToView[rel];
                 if (idx >= 0 && idx < _seatViews.Length) return idx;
@@ -1607,17 +473,12 @@ namespace HijackPoker.UI
             return fallback >= 0 && fallback < _seatViews.Length ? fallback : -1;
         }
 
-        private static int ResolveLocalSeat(List<PlayerState> players, string localName)
+        private void OnDestroy()
         {
-            if (players == null || players.Count == 0) return 1;
-            if (!string.IsNullOrEmpty(localName))
-            {
-                var local = players.FirstOrDefault(p =>
-                    !string.IsNullOrEmpty(p.Username) &&
-                    p.Username.Equals(localName, StringComparison.OrdinalIgnoreCase));
-                if (local != null && local.Seat > 0) return local.Seat;
-            }
-            return 1;
+            _turnTimer?.StopTurnTimer();
+            _celebration?.Cleanup();
+            _potDisplay?.Cleanup();
+            if (_loadingOverlayGroup != null) DOTween.Kill(_loadingOverlayGroup);
         }
     }
 }
