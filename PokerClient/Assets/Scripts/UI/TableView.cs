@@ -26,6 +26,7 @@ namespace HijackPoker.UI
         [Header("Center Pot")]
         [SerializeField] private TextMeshProUGUI _centerPotText;
         [SerializeField] private RectTransform _potTarget;
+        private readonly List<GameObject> _potChips = new List<GameObject>();
 
         [Header("Loading")]
         [SerializeField] private CanvasGroup _loadingOverlayGroup;
@@ -833,6 +834,7 @@ namespace HijackPoker.UI
             {
                 _centerPotText.text = "";
                 _displayedPot = 0;
+                UpdatePotChips(0);
                 return;
             }
 
@@ -841,6 +843,59 @@ namespace HijackPoker.UI
                 _displayedPot = value;
                 _centerPotText.text = $"POT: {MoneyFormatter.Format(value)}";
             }).SetEase(Ease.OutCubic).SetTarget(_centerPotText);
+
+            UpdatePotChips(pot);
+        }
+
+        private void UpdatePotChips(float pot)
+        {
+            if (_potTarget == null || _chipFlySprite == null) return;
+
+            // Determine how many chip stacks to show based on pot size
+            // Thresholds: $5=1, $15=2, $30=3, $50=4, $80=5, $120+=6
+            int targetCount = 0;
+            if (pot >= 5) targetCount = 1;
+            if (pot >= 15) targetCount = 2;
+            if (pot >= 30) targetCount = 3;
+            if (pot >= 50) targetCount = 4;
+            if (pot >= 80) targetCount = 5;
+            if (pot >= 120) targetCount = 6;
+
+            // Remove excess chips
+            while (_potChips.Count > targetCount)
+            {
+                var chip = _potChips[_potChips.Count - 1];
+                _potChips.RemoveAt(_potChips.Count - 1);
+                if (chip != null) Destroy(chip);
+            }
+
+            // Add new chips stacked below community cards, piled with slight offsets
+            while (_potChips.Count < targetCount)
+            {
+                int i = _potChips.Count;
+                var chipGO = new GameObject($"PotChip_{i}", typeof(RectTransform));
+                chipGO.transform.SetParent(_potTarget, false);
+                var img = chipGO.AddComponent<Image>();
+                img.sprite = _chipFlySprite;
+                img.preserveAspect = true;
+                var rt = chipGO.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(32, 32);
+
+                // Stack chips vertically like a pile, each slightly offset
+                // so they look like stacked poker chips
+                float x = (i % 2 == 0 ? -1 : 1) * (i / 2) * 8f; // slight horizontal scatter
+                float y = i * 4f; // stack upward, each chip offset a bit
+                rt.anchoredPosition = new Vector2(x, y);
+
+                // Later chips render on top
+                chipGO.transform.SetAsLastSibling();
+
+                // Pop-in animation
+                chipGO.transform.localScale = Vector3.zero;
+                chipGO.transform.DOScale(1f, 0.3f).SetEase(Ease.OutBack);
+
+                _potChips.Add(chipGO);
+            }
         }
 
         private void OnDestroy()
@@ -849,6 +904,9 @@ namespace HijackPoker.UI
             _restartButtonDelayTween?.Kill();
             if (_centerPotText != null) DOTween.Kill(_centerPotText);
             if (_loadingOverlayGroup != null) DOTween.Kill(_loadingOverlayGroup);
+            foreach (var chip in _potChips)
+                if (chip != null) Destroy(chip);
+            _potChips.Clear();
         }
 
         private void EnsureAnimationRefs()

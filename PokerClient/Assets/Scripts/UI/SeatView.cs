@@ -139,8 +139,26 @@ namespace HijackPoker.UI
             _betText.text = player.Bet > 0 ? MoneyFormatter.Format(player.Bet) : "";
             if (_betChipImage != null) _betChipImage.gameObject.SetActive(player.Bet > 0);
             if (_chipStackView != null) _chipStackView.Render(player.Stack);
-            _actionText.text = player.Action?.ToUpper() ?? "";
-            _actionText.color = ActionDefaultColor;
+            // All-in gets a bold styled label with pulse, others show normal action
+            if (player.IsAllIn)
+            {
+                _actionText.text = "\u26A0 ALL IN \u26A0";
+                _actionText.color = AllInColor;
+                _actionText.fontSize = _actionText.fontSize > 0 ? _actionText.fontSize : 14f;
+                DOTween.Kill(_actionText.transform, true);
+                _actionText.transform.localScale = Vector3.one;
+                _actionText.transform.DOScale(1.15f, 0.6f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetEase(Ease.InOutSine)
+                    .SetTarget(_actionText.transform);
+            }
+            else
+            {
+                DOTween.Kill(_actionText.transform, true);
+                _actionText.transform.localScale = Vector3.one;
+                _actionText.text = player.Action?.ToUpper() ?? "";
+                _actionText.color = ActionDefaultColor;
+            }
 
             // Stack tween
             DOTween.Kill(_stackText);
@@ -158,11 +176,25 @@ namespace HijackPoker.UI
 
             bool isWinner = player.IsWinner;
 
-            // Border: gold for winners, orange for all-in, blue for local, clear otherwise
-            _borderImage.color = isWinner ? GoldColor
-                : player.IsAllIn ? AllInColor
-                : _isLocalPlayer ? PlayerBorderColor
-                : Color.clear;
+            // Border: gold for winners, pulsing orange for all-in, blue for local, clear otherwise
+            DOTween.Kill(_borderImage);
+            if (isWinner)
+            {
+                _borderImage.color = GoldColor;
+            }
+            else if (player.IsAllIn)
+            {
+                _borderImage.color = AllInColor;
+                DOTween.To(() => _borderImage.color, c => _borderImage.color = c,
+                    new Color(1f, 0.3f, 0.1f), 0.5f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetEase(Ease.InOutSine)
+                    .SetTarget(_borderImage);
+            }
+            else
+            {
+                _borderImage.color = _isLocalPlayer ? PlayerBorderColor : Color.clear;
+            }
 
             // Avatar ring: gold glow for winners, scaled up 2x with pulse
             if (_avatarRingImage != null)
@@ -312,6 +344,9 @@ namespace HijackPoker.UI
                 DOTween.Kill(_avatarRingImage.transform);
                 _avatarRingImage.transform.localScale = Vector3.one;
             }
+            DOTween.Kill(_borderImage);
+            DOTween.Kill(_actionText?.transform);
+            if (_actionText != null) _actionText.transform.localScale = Vector3.one;
             _backgroundImage.color = NormalColor;
             _displayedStack = 0f;
             DOTween.Kill(_stackText);

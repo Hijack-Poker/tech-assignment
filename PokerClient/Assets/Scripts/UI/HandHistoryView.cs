@@ -89,14 +89,21 @@ namespace HijackPoker.UI
                 }
             }
 
-            // Show winners
-            if (game.HandStep == 14 && _lastHandStep != 14 && state.Players != null)
+            // Show winners at step 14 or 15 (winnings may not be populated until step 15)
+            if ((game.HandStep == 14 || game.HandStep == 15) && _lastHandStep < 14 && state.Players != null)
             {
+                bool anyWinnerLogged = false;
                 foreach (var p in state.Players)
                 {
-                    if (p.IsWinner)
+                    if (p.IsWinner && p.Winnings > 0)
+                    {
                         AddLine($"  {ColoredName(p)} wins <color=#FFD700>{MoneyFormatter.FormatGain(p.Winnings)}</color>");
+                        anyWinnerLogged = true;
+                    }
                 }
+                // If no winner had winnings yet, check again next step
+                if (!anyWinnerLogged && game.HandStep == 14)
+                    _lastHandStep = 13; // force re-check at step 15
             }
 
             if (game.HandStep == 15 && _lastHandStep != 15)

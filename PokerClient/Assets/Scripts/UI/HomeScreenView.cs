@@ -26,8 +26,6 @@ namespace HijackPoker.UI
 
         private static readonly Color DisabledBtn = new Color(0.20f, 0.25f, 0.32f);
         private static readonly Color EnabledBtn = new Color(0.09f, 0.64f, 0.43f);
-        private static readonly Color TableSelectedColor = new Color(0.09f, 0.64f, 0.43f);
-        private static readonly Color TableUnselectedColor = new Color(0.15f, 0.22f, 0.30f);
 
         private Sequence _entranceSeq;
         private Tween _buttonPulse;
@@ -35,13 +33,6 @@ namespace HijackPoker.UI
         private Tween _cardFloat;
         private bool _transitioning;
         private string _selectedAvatar = "";
-        private int _selectedTableId = 1;
-
-        // Table selection UI
-        private Button _table1Button;
-        private Button _table2Button;
-        private Image _table1Image;
-        private Image _table2Image;
 
         private void Start()
         {
@@ -108,7 +99,6 @@ namespace HijackPoker.UI
 
             // Populate avatar grid
             PopulateAvatarGrid();
-            CreateTableSelector();
         }
 
         private void PopulateAvatarGrid()
@@ -213,85 +203,6 @@ namespace HijackPoker.UI
                 .SetLoops(-1, LoopType.Yoyo);
         }
 
-        private void CreateTableSelector()
-        {
-            // Place below the avatar grid, above the play button
-            var canvas = GetComponentInParent<Canvas>();
-            Transform parent = _playButton.transform.parent;
-
-            var container = new GameObject("TableSelector", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            container.transform.SetParent(parent, false);
-            // Position above the play button
-            var containerRt = container.GetComponent<RectTransform>();
-            var playRt = _playButton.GetComponent<RectTransform>();
-            containerRt.anchorMin = playRt.anchorMin;
-            containerRt.anchorMax = playRt.anchorMax;
-            containerRt.pivot = playRt.pivot;
-            containerRt.sizeDelta = new Vector2(340f, 50f);
-            containerRt.anchoredPosition = playRt.anchoredPosition + new Vector2(0f, 70f);
-
-            var hlg = container.GetComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 12f;
-            hlg.childAlignment = TextAnchor.MiddleCenter;
-            hlg.childForceExpandWidth = true;
-            hlg.childForceExpandHeight = true;
-
-            // Label
-            var labelGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
-            labelGO.transform.SetParent(container.transform, false);
-            var labelTxt = labelGO.GetComponent<TextMeshProUGUI>();
-            labelTxt.text = "TABLE:";
-            labelTxt.fontSize = 14;
-            labelTxt.fontStyle = FontStyles.Bold;
-            labelTxt.alignment = TextAlignmentOptions.MidlineRight;
-            labelTxt.color = new Color(0.7f, 0.75f, 0.8f);
-            var labelLe = labelGO.GetComponent<LayoutElement>();
-            labelLe.preferredWidth = 60f;
-
-            _table1Button = CreateTableButton(container.transform, "Starter\n$1/$2", 1);
-            _table2Button = CreateTableButton(container.transform, "High Stakes\n$5/$10", 2);
-            _table1Image = _table1Button.GetComponent<Image>();
-            _table2Image = _table2Button.GetComponent<Image>();
-
-            SelectTable(1);
-        }
-
-        private Button CreateTableButton(Transform parent, string label, int tableId)
-        {
-            var go = new GameObject($"Table{tableId}Btn", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
-            go.transform.SetParent(parent, false);
-            var img = go.GetComponent<Image>();
-            img.color = TableUnselectedColor;
-            var le = go.GetComponent<LayoutElement>();
-            le.preferredWidth = 120f;
-            le.preferredHeight = 44f;
-
-            var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
-            txtGO.transform.SetParent(go.transform, false);
-            var txtRt = txtGO.GetComponent<RectTransform>();
-            txtRt.anchorMin = Vector2.zero;
-            txtRt.anchorMax = Vector2.one;
-            txtRt.offsetMin = Vector2.zero;
-            txtRt.offsetMax = Vector2.zero;
-            var txt = txtGO.GetComponent<TextMeshProUGUI>();
-            txt.text = label;
-            txt.fontSize = 13;
-            txt.fontStyle = FontStyles.Bold;
-            txt.alignment = TextAlignmentOptions.Center;
-            txt.color = Color.white;
-
-            var btn = go.GetComponent<Button>();
-            btn.onClick.AddListener(() => SelectTable(tableId));
-            return btn;
-        }
-
-        private void SelectTable(int tableId)
-        {
-            _selectedTableId = tableId;
-            if (_table1Image != null) _table1Image.color = tableId == 1 ? TableSelectedColor : TableUnselectedColor;
-            if (_table2Image != null) _table2Image.color = tableId == 2 ? TableSelectedColor : TableUnselectedColor;
-        }
-
         private void OnPlayClicked()
         {
             if (_transitioning) return;
@@ -301,7 +212,7 @@ namespace HijackPoker.UI
             string playerName = _nameInput.text.Trim();
             PlayerPrefs.SetString("PlayerName", playerName);
             PlayerPrefs.SetString("PlayerAvatar", _selectedAvatar);
-            PlayerPrefs.SetInt("TableId", _selectedTableId);
+            PlayerPrefs.SetInt("TableId", 1);
             PlayerPrefs.Save();
 
             _buttonPulse?.Kill();

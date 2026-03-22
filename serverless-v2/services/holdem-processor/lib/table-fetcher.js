@@ -133,12 +133,13 @@ async function createNewGame(tableId) {
     const dealerSeat = lastCompleted ? lastCompleted.dealer_seat : 1;
 
     // Insert game record
-    const [insertId] = await sequelize.query(
-      `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
-       VALUES (:tableId, :gameNo, 0, :dealerSeat, 0, 'in_progress')`,
+    const isPostgres = sequelize.getDialect() === 'postgres';
+    const insertSql = `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
+       VALUES (:tableId, :gameNo, 0, :dealerSeat, 0, 'in_progress')${isPostgres ? ' RETURNING id' : ''}`;
+    const insertResult = await sequelize.query(insertSql,
       { replacements: { tableId, gameNo: nextGameNo, dealerSeat }, type: QueryTypes.INSERT }
     );
-    const gameId = insertId;
+    const gameId = isPostgres ? insertResult[0]?.[0]?.id : insertResult[0];
 
     // Insert players with carried-over stacks
     for (const p of carryOverPlayers) {
