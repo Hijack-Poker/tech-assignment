@@ -1,0 +1,15 @@
+node_modules
+PokerClient
+unity-client
+docs
+ui
+.git
+*.md
+serverless-v2/services/rewards-api
+serverless-v2/services/rewards-frontend
+serverless-v2/services/streaks-api
+serverless-v2/services/streaks-frontend
+serverless-v2/services/cash-game-broadcast
+serverless-v2/services/holdem-processor/node_modules
+serverless-v2/services/holdem-processor/__tests__
+serverless-v2/shared/node_modules
