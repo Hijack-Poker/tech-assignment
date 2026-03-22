@@ -135,7 +135,7 @@ namespace HijackPoker.UI
             // All-in gets a bold styled label with pulse, others show normal action
             if (player.IsAllIn)
             {
-                _actionText.text = "\u26A0 ALL IN \u26A0";
+                _actionText.text = "ALL IN";
                 _actionText.color = AllInColor;
                 _actionText.fontSize = _actionText.fontSize > 0 ? _actionText.fontSize : 14f;
                 DOTween.Kill(_actionText.transform, true);

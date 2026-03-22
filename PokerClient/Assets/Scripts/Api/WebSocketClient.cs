@@ -23,6 +23,7 @@ namespace HijackPoker.Api
         private System.Net.WebSockets.ClientWebSocket _ws;
         private CancellationTokenSource _cts;
         private bool _shouldRun;
+        private bool _loggedUnavailable;
 
         public void Connect(int tableId)
         {
@@ -48,6 +49,7 @@ namespace HijackPoker.Api
                     var uri = new Uri($"{wsUrl}?tableId={tableId}");
                     await _ws.ConnectAsync(uri, _cts.Token);
                     IsConnected = true;
+                    _loggedUnavailable = false;
                     Debug.Log($"[WebSocket] Connected to {uri}");
 
                     await ReceiveLoop();
@@ -58,7 +60,11 @@ namespace HijackPoker.Api
                 }
                 catch (Exception ex)
                 {
-                    Debug.Log($"[WebSocket] Connection unavailable ({ex.GetType().Name}), will retry in {reconnectDelaySec}s");
+                    if (!_loggedUnavailable)
+                    {
+                        Debug.Log($"[WebSocket] Connection unavailable ({ex.GetType().Name}), falling back to REST polling. Retrying silently.");
+                        _loggedUnavailable = true;
+                    }
                     IsConnected = false;
                 }
 
