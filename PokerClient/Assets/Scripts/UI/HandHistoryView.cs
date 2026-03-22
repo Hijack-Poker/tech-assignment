@@ -19,6 +19,7 @@ namespace HijackPoker.UI
         private readonly Dictionary<int, string> _lastActions = new();
         private int _lastGameNo = -1;
         private int _lastHandStep = -1;
+        private bool _winnersLoggedThisHand;
 
         private void OnEnable()
         {
@@ -41,6 +42,7 @@ namespace HijackPoker.UI
             {
                 _lastActions.Clear();
                 _lastGameNo = game.GameNo;
+                _winnersLoggedThisHand = false;
             }
 
             // Only show step header when the step changes
@@ -89,21 +91,17 @@ namespace HijackPoker.UI
                 }
             }
 
-            // Show winners at step 14 or 15 (winnings may not be populated until step 15)
-            if ((game.HandStep == 14 || game.HandStep == 15) && _lastHandStep < 14 && state.Players != null)
+            // Show winners at step 14 or 15 — keep retrying until winnings are populated
+            if (game.HandStep >= 14 && !_winnersLoggedThisHand && state.Players != null)
             {
-                bool anyWinnerLogged = false;
                 foreach (var p in state.Players)
                 {
                     if (p.IsWinner && p.Winnings > 0)
                     {
                         AddLine($"  {ColoredName(p)} wins <color=#FFD700>{MoneyFormatter.FormatGain(p.Winnings)}</color>");
-                        anyWinnerLogged = true;
+                        _winnersLoggedThisHand = true;
                     }
                 }
-                // If no winner had winnings yet, check again next step
-                if (!anyWinnerLogged && game.HandStep == 14)
-                    _lastHandStep = 13; // force re-check at step 15
             }
 
             if (game.HandStep == 15 && _lastHandStep != 15)

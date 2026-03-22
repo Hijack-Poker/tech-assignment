@@ -2,8 +2,10 @@ using System.Collections;
 using System.Threading.Tasks;
 using UnityEngine;
 using DG.Tweening;
+using HijackPoker.AI;
 using HijackPoker.Api;
 using HijackPoker.Models;
+using HijackPoker.UI;
 using HijackPoker.Utils;
 
 namespace HijackPoker.Managers
@@ -76,6 +78,9 @@ namespace HijackPoker.Managers
 
                 // Start WebSocket for real-time updates (falls back gracefully)
                 ConnectWebSocket();
+
+                // Attach AI feature components
+                EnsureAIComponents();
             }
             else
             {
@@ -259,6 +264,18 @@ namespace HijackPoker.Managers
                 _hasRaisedThisRound = true;
 
             _ = AdvanceStepAsync(result.Action, result.Amount);
+        }
+
+        private void EnsureAIComponents()
+        {
+            if (GetComponent<HandNarrator>() == null)
+                gameObject.AddComponent<HandNarrator>();
+            if (GetComponent<TiltDetector>() == null)
+                gameObject.AddComponent<TiltDetector>();
+            if (GetComponent<SessionTracker>() == null)
+                gameObject.AddComponent<SessionTracker>();
+            if (GetComponent<SessionStatsView>() == null)
+                gameObject.AddComponent<SessionStatsView>();
         }
 
         private void OnDestroy()

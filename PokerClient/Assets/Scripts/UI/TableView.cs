@@ -133,6 +133,8 @@ namespace HijackPoker.UI
             _prevHandStep = -1;
             _celebration.ResetTracking();
             _isFirstState = false;
+            _avatarsAssigned = false;
+            _seatAvatars.Clear();
         }
 
         private void AssignAvatars(List<PlayerState> players, string localPlayerName)
