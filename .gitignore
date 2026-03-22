@@ -18,12 +18,10 @@ DEMO_SCRIPT.md
 PokerClient/.claude/
 PokerClient/.mcp.json
 PokerClient/CLAUDE.md
-PokerClient/README.md
 
 # Build artifacts
 build/
 fly.toml
-unity-client/
 
 # Asset packs (originals) and screenshots
 PokerClient/Assets/Screenshots/
