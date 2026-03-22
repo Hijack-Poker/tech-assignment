@@ -1,121 +1,74 @@
-# Hijack Poker — Unity Game Client (Option D)
-
-A poker table client built in Unity that connects to the holdem-processor REST API at `localhost:3030`.
+# Option D: Unity Game Client
 
 ## How to Run
 
-### 1. Start the backend
+1. **Start the backend**
+   ```bash
+   cp .env.example .env
+   docker compose --profile engine up -d
+   ```
+   Wait until `docker compose ps` shows all containers healthy (~2 min first time).
 
-Follow the [main README](../README.md) to start Docker:
+2. **Open Unity project** — open Unity Hub, click Open, select the `PokerClient/` folder.
 
-```bash
-docker compose --profile engine up -d
-```
+3. **Press Play** — open `Assets/Scenes/HomeScene.unity`, hit Play. Enter a name, pick an avatar, choose a table, click Play.
 
-### 2. Open in Unity
+The game connects to `localhost:3030` automatically.
 
-1. Open **Unity Hub**
-2. Click **Open** > select the `PokerClient/` folder
-3. If prompted, install the matching Unity Editor version (2022.3+ LTS)
+## Architecture
 
-### 3. Play
+**UI System: uGUI** — chose Canvas-based UI over UI Toolkit for its maturity and community support.
 
-1. Open `Assets/Scenes/HomeScene.unity`
-2. Press **Play**
-3. Enter a name, pick an avatar, choose a table, click **Play**
+**Pattern: Event-driven MVP** — `GameManager` orchestrates API calls, `TableStateManager` broadcasts state via `OnTableStateChanged`, all views subscribe and redraw independently.
 
-That's it. The game connects to `localhost:3030` automatically.
+**Async: UnityWebRequest + TaskCompletionSource** — wraps Unity's coroutine-based web requests in async/await. No extra packages needed.
 
----
+**JSON: Newtonsoft JSON** (`com.unity.nuget.newtonsoft-json`) — handles nested arrays and nullable types that `JsonUtility` can't.
 
-## Architecture Decisions
+**Animation: DOTween** — card deal arcs, chip fly, shuffle riffle, pot/stack tweening, winner glow.
 
-| Concern | Decision | Why |
-|---------|----------|-----|
-| UI System | **uGUI** (Canvas-based) | Battle-tested, more community support than UI Toolkit |
-| Async | **UnityWebRequest + TaskCompletionSource** | Built-in, no extra packages |
-| JSON | **Newtonsoft JSON** | Handles nested arrays + nullables (JsonUtility can't) |
-| Text | **TextMeshPro** | Required for quality text rendering |
-| Animation | **DOTween** | Industry-standard tweening |
-| Pattern | **Event-driven MVP** | Decoupled views, testable managers |
-| State | **Full redraw on every state change** | Simple and correct, no delta patching bugs |
-| Tests | **NUnit Edit Mode** | Fast, no Play Mode dependency |
-
-### Event Flow
+**State: Full redraw** — every state change triggers a complete UI refresh. Simple, correct, no delta-patching bugs.
 
 ```
 GameManager.AdvanceStepAsync()
-  -> PokerApiClient.ProcessStepAsync(tableId)
-  -> PokerApiClient.GetTableStateAsync(tableId)
-  -> TableStateManager.SetState(TableResponse)
-  -> OnTableStateChanged event fires
-  -> All views redraw
+  -> PokerApiClient.ProcessStepAsync()
+  -> PokerApiClient.GetTableStateAsync()
+  -> TableStateManager.SetState()
+  -> OnTableStateChanged fires
+  -> TableView, SeatView, HudView, HandHistoryView, ShowdownView all redraw
 ```
-
----
 
 ## Project Structure
 
 ```
 PokerClient/Assets/
 ├── Scripts/
-│   ├── Api/
-│   │   ├── PokerApiClient.cs        # REST client
-│   │   └── WebSocketClient.cs       # Real-time updates (graceful fallback)
-│   ├── Models/
-│   │   ├── GameState.cs             # Game data + Winner class
-│   │   ├── PlayerState.cs           # Player data + status helpers
-│   │   └── TableResponse.cs        # API response wrapper
-│   ├── Managers/
-│   │   ├── GameManager.cs           # Game flow, auto-play, restart
-│   │   └── TableStateManager.cs    # State events + step labels
-│   ├── UI/
-│   │   ├── TableView.cs            # Table, animations, tip button
-│   │   ├── SeatView.cs             # Per-seat (cards, stack, bet, badges)
-│   │   ├── CardView.cs             # Single card rendering
-│   │   ├── CommunityCardsView.cs   # 5 community card slots
-│   │   ├── HudView.cs              # Phase label, hand #, pot, exit/restart
-│   │   ├── ControlsView.cs         # Next Step, Auto Play, Speed, Actions
-│   │   ├── HandHistoryView.cs      # Scrollable action log
-│   │   ├── ShowdownView.cs         # Showdown cards + hand ranks
-│   │   ├── HomeScreenView.cs       # Name, avatar, table selection
-│   │   ├── ChipStackView.cs        # Chip denomination columns
-│   │   └── StatusBarView.cs        # Connection status
-│   └── Utils/
-│       ├── CardUtils.cs            # "AH" -> rank + suit
-│       └── MoneyFormatter.cs       # float -> "$150.00"
-├── Scenes/
-│   ├── HomeScene.unity
-│   └── PokerTable.unity
-├── Resources/
-│   ├── Avatars/                    # 50+ player avatars
-│   ├── Cards/                      # Card face sprites
-│   ├── Audio/                      # Sound effects
-│   └── Sprites/Chips/              # Chip sprites
-└── Tests/EditMode/
-    ├── ApiClientTests.cs           # 6 tests — API deserialization
-    ├── GameStateTests.cs           # 16 tests — state logic, models
-    └── CardUtilsTests.cs           # 17 tests — parsing, formatting
+│   ├── Api/           PokerApiClient.cs, WebSocketClient.cs
+│   ├── Models/        GameState.cs, PlayerState.cs, TableResponse.cs
+│   ├── Managers/      GameManager.cs, TableStateManager.cs
+│   ├── UI/            TableView, SeatView, CardView, CommunityCardsView,
+│   │                  HudView, ControlsView, HandHistoryView, ShowdownView,
+│   │                  HomeScreenView, ChipStackView, StatusBarView
+│   └── Utils/         CardUtils.cs, MoneyFormatter.cs
+├── Scenes/            HomeScene.unity, PokerTable.unity
+├── Resources/         Avatars/, Cards/, Audio/, Sprites/Chips/
+└── Tests/EditMode/    ApiClientTests.cs, GameStateTests.cs, CardUtilsTests.cs
 ```
 
----
+## Tests
 
-## Features
+**39 tests** — run in Unity Editor: Window > General > Test Runner > EditMode > Run All.
 
-**Core:** 6-seat table, community cards, pot, stacks, bets, actions, D/SB/BB badges, winner highlighting, hand history
+- **ApiClientTests** (6) — Health, Process, Table response deserialization, error cases
+- **GameStateTests** (16) — Showdown detection, hand completion, player status, winner identification, JSON parsing
+- **CardUtilsTests** (17) — Card parsing, suit colors, display strings, money formatting, step labels
 
-**Controls:** Next Step, Auto Play (Safe/Small/Hard), 4 speed options, Fold/Call/Raise/All-In, 2X/3X/Custom bet, Restart, Tip $1
+## Features Implemented
 
-**Animations:** Card deal arc, shuffle riffle, chip fly, pot/stack tweening, winner glow, phase punch scale
+**Must Have:** 6-seat table, API connection, step-by-step hand playback, card rendering with showdown reveal, player info per seat, pot display, D/SB/BB badges, winner highlighting with hand rank + payout, Next Step button, phase labels, unit tests, Docker backend.
 
-**Sound:** Shuffle, chips, fold, turn start, time warning, crowd cheers
+**Should Have:** Auto-play with 4 speeds and 3 styles (Safe/Small/Hard), card reveal animation, stack/pot tweening, phase label animation, seamless multi-hand play, hand history log, error handling with status bar, hand number display.
 
-**Bonus:** Home screen with avatars, table selector (Starter/High Stakes), chip stack visualization, WebSocket client, responsive layout
+**Could Have:** Card sprites, chip stack visualization, 7 sound effects, responsive layout, 50+ player avatars, card deal animation, shuffle animation, WebSocket client, fresh restart button, configurable table ID.
 
----
-
-## Running Tests
-
-In Unity Editor: **Window > General > Test Runner > EditMode > Run All**
-
-39 tests covering API deserialization, game state logic, card parsing, and money formatting.
+**Beyond Scope:** Home screen with avatar selection, betting UI (Fold/Call/Raise/All-In/2X/3X/Custom), tip dealer button with animation, turn timer with warning sound.
