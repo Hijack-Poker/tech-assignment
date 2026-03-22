@@ -7,6 +7,22 @@ coverage/
 *.log
 .DS_Store
 
+# Claude/AI tooling (local only)
+.agents/
+.claude/
+.mcp.json
+SKILL.md
+presearch.md
+PRD.md
+DEMO_SCRIPT.md
+PokerClient/.claude/
+PokerClient/.mcp.json
+
+# Build artifacts
+build/
+fly.toml
+unity-client/
+
 # Unity
 PokerClient/[Ll]ibrary/
 PokerClient/[Tt]emp/
