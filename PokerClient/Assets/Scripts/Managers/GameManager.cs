@@ -351,6 +351,9 @@ namespace HijackPoker.Managers
 
         private void EnsureAIComponents()
         {
+            // HandDataCollector MUST be first — other AI components depend on it
+            if (GetComponent<HandDataCollector>() == null)
+                gameObject.AddComponent<HandDataCollector>();
             if (GetComponent<HandNarrator>() == null)
                 gameObject.AddComponent<HandNarrator>();
             if (GetComponent<TiltDetector>() == null)

@@ -21,6 +21,8 @@ namespace HijackPoker.UI
         [SerializeField] private Button _exitButton;
 
         private Button _restartButton;
+        private Button _helpButton;
+        private HelpPopupView _helpPopup;
         private float _displayedPot;
 
         private void Awake()
@@ -34,6 +36,7 @@ namespace HijackPoker.UI
                 _exitButton.onClick.AddListener(OnExitClicked);
 
             CreateRestartButton();
+            CreateHelpButton();
         }
 
         private void OnEnable() => _stateManager.OnTableStateChanged += OnStateChanged;
@@ -120,6 +123,67 @@ namespace HijackPoker.UI
             if (_gameManager != null && _gameManager.IsAutoPlaying)
                 _gameManager.ToggleAutoPlay();
             SceneManager.LoadScene("HomeScene");
+        }
+
+        private void CreateHelpButton()
+        {
+            // Place "?" button to the left of the restart button
+            RectTransform anchorRt = null;
+            Transform parent = null;
+
+            if (_restartButton != null)
+            {
+                anchorRt = _restartButton.GetComponent<RectTransform>();
+                parent = anchorRt.parent;
+            }
+            else if (_exitButton != null)
+            {
+                anchorRt = _exitButton.GetComponent<RectTransform>();
+                parent = anchorRt.parent;
+            }
+
+            if (anchorRt == null || parent == null) return;
+
+            var go = new GameObject("HelpBtn", typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = anchorRt.anchorMin;
+            rt.anchorMax = anchorRt.anchorMax;
+            rt.pivot = anchorRt.pivot;
+            rt.sizeDelta = new Vector2(36f, anchorRt.sizeDelta.y);
+            rt.anchoredPosition = anchorRt.anchoredPosition + new Vector2(-(anchorRt.sizeDelta.x + 8f), 0f);
+
+            var img = go.GetComponent<Image>();
+            img.color = new Color(0.18f, 0.42f, 0.68f);
+
+            var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            txtGO.transform.SetParent(go.transform, false);
+            var txtRt = txtGO.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero;
+            txtRt.offsetMax = Vector2.zero;
+            var txt = txtGO.GetComponent<TextMeshProUGUI>();
+            txt.text = "?";
+            txt.fontSize = 20;
+            txt.fontStyle = FontStyles.Bold;
+            txt.alignment = TextAlignmentOptions.Center;
+            txt.color = Color.white;
+
+            _helpButton = go.GetComponent<Button>();
+            _helpButton.onClick.AddListener(OnHelpClicked);
+        }
+
+        private void OnHelpClicked()
+        {
+            if (_helpPopup == null)
+            {
+                _helpPopup = GetComponent<HelpPopupView>();
+                if (_helpPopup == null)
+                    _helpPopup = gameObject.AddComponent<HelpPopupView>();
+            }
+            _helpPopup.Toggle();
         }
 
         private void OnDestroy()

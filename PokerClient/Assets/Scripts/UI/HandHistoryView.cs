@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 using HijackPoker.Managers;
 using HijackPoker.Models;
@@ -13,13 +14,102 @@ namespace HijackPoker.UI
         [SerializeField] private TextMeshProUGUI _historyText;
 
         private readonly List<string> _lines = new List<string>();
-        private const int MaxLines = 30;
+        private const int MaxLines = 100;
+        private ScrollRect _scrollRect;
 
         // Track last known action per seat to only log new actions
         private readonly Dictionary<int, string> _lastActions = new();
         private int _lastGameNo = -1;
         private int _lastHandStep = -1;
         private bool _winnersLoggedThisHand;
+
+        private void Awake()
+        {
+            SetupScrollableHistory();
+        }
+
+        private void SetupScrollableHistory()
+        {
+            if (_historyText == null) return;
+
+            // The _historyText sits inside a panel. We'll wrap it in a ScrollRect
+            // so the full history is scrollable and new entries auto-scroll to bottom.
+            var panel = _historyText.transform.parent;
+            if (panel == null) return;
+
+            // If there's already a ScrollRect, just grab it
+            _scrollRect = panel.GetComponent<ScrollRect>();
+            if (_scrollRect == null)
+                _scrollRect = panel.GetComponentInChildren<ScrollRect>();
+            if (_scrollRect != null) return;
+
+            // Create scroll structure inside the existing panel
+            var scrollGO = new GameObject("HistoryScroll", typeof(RectTransform), typeof(ScrollRect));
+            scrollGO.transform.SetParent(panel, false);
+            var scrollRt = scrollGO.GetComponent<RectTransform>();
+            scrollRt.anchorMin = Vector2.zero;
+            scrollRt.anchorMax = Vector2.one;
+            scrollRt.offsetMin = new Vector2(8f, 4f);
+            scrollRt.offsetMax = new Vector2(-8f, -4f);
+
+            // Viewport
+            var viewportGO = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(Mask));
+            viewportGO.transform.SetParent(scrollGO.transform, false);
+            var vpRt = viewportGO.GetComponent<RectTransform>();
+            vpRt.anchorMin = Vector2.zero;
+            vpRt.anchorMax = Vector2.one;
+            vpRt.offsetMin = Vector2.zero;
+            vpRt.offsetMax = Vector2.zero;
+            var vpImg = viewportGO.GetComponent<Image>();
+            vpImg.color = new Color(1f, 1f, 1f, 0.003f);
+            viewportGO.GetComponent<Mask>().showMaskGraphic = false;
+
+            // Content container — anchored to bottom so text grows upward
+            var contentGO = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            contentGO.transform.SetParent(viewportGO.transform, false);
+            var contentRt = contentGO.GetComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0f, 0f);
+            contentRt.anchorMax = new Vector2(1f, 0f);
+            contentRt.pivot = new Vector2(0.5f, 0f);
+            contentRt.anchoredPosition = Vector2.zero;
+            contentRt.sizeDelta = new Vector2(0f, 0f);
+            var vlg = contentGO.GetComponent<VerticalLayoutGroup>();
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childAlignment = TextAnchor.LowerLeft;
+            var csf = contentGO.GetComponent<ContentSizeFitter>();
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            // Reparent the text into the content container
+            _historyText.transform.SetParent(contentGO.transform, false);
+            var textRt = _historyText.GetComponent<RectTransform>();
+            textRt.anchorMin = new Vector2(0f, 0f);
+            textRt.anchorMax = new Vector2(1f, 0f);
+            textRt.pivot = new Vector2(0f, 0f);
+            textRt.anchoredPosition = Vector2.zero;
+            textRt.sizeDelta = Vector2.zero;
+
+            // Ensure text wraps and sizes correctly
+            _historyText.enableWordWrapping = true;
+            _historyText.overflowMode = TextOverflowModes.Overflow;
+            _historyText.alignment = TextAlignmentOptions.BottomLeft;
+
+            // Add LayoutElement so the layout group can measure it
+            var le = _historyText.GetComponent<LayoutElement>();
+            if (le == null) le = _historyText.gameObject.AddComponent<LayoutElement>();
+            le.flexibleWidth = 1f;
+
+            // Wire up ScrollRect
+            _scrollRect = scrollGO.GetComponent<ScrollRect>();
+            _scrollRect.content = contentRt;
+            _scrollRect.viewport = vpRt;
+            _scrollRect.horizontal = false;
+            _scrollRect.vertical = true;
+            _scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            _scrollRect.scrollSensitivity = 20f;
+        }
 
         private void OnEnable()
         {
@@ -159,8 +249,15 @@ namespace HijackPoker.UI
 
         private void UpdateDisplay()
         {
-            if (_historyText != null)
-                _historyText.text = string.Join("\n", _lines);
+            if (_historyText == null) return;
+            _historyText.text = string.Join("\n", _lines);
+
+            // Force layout rebuild and scroll to bottom
+            if (_scrollRect != null)
+            {
+                Canvas.ForceUpdateCanvases();
+                _scrollRect.verticalNormalizedPosition = 0f;
+            }
         }
     }
 }
