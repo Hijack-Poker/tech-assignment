@@ -25,7 +25,13 @@ jobs:
         working-directory: serverless-v2/shared
 
       - run: npm install
-      - run: npm test
+      - run: npm test -- --coverage
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: holdem-coverage
+          path: serverless-v2/services/holdem-processor/coverage/
 
   test-rewards-api:
     name: Rewards API Tests

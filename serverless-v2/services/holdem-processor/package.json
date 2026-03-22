@@ -26,6 +26,11 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/__tests__/**/*.test.js"]
+    "testMatch": ["**/__tests__/**/*.test.js"],
+    "collectCoverageFrom": [
+      "handler.js",
+      "lib/**/*.js",
+      "!**/node_modules/**"
+    ]
   }
 }

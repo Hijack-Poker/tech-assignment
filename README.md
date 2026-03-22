@@ -126,16 +126,96 @@ User clicks "Next Step"
     -> TableView, SeatView, HudView, HandHistoryView, ShowdownView all redraw
 ```
 
-### API Endpoints
+### API Reference
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | Backend health check |
-| POST | `/process` | Advance hand by one step |
-| GET | `/table/{tableId}` | Full table state (game + players) |
-| POST | `/table/{tableId}/reset` | Reset table (carry over stacks) |
-| POST | `/table/{tableId}/fresh-reset` | Wipe all history, fresh stacks |
-| POST | `/table/{tableId}/tip` | Tip dealer ($1 from player stack) |
+All endpoints return JSON with CORS headers (`Access-Control-Allow-Origin: *`).
+
+#### `GET /health`
+
+```json
+// Response 200
+{ "service": "holdem-processor", "status": "ok", "timestamp": "2026-03-22T12:00:00.000Z" }
+```
+
+#### `POST /process` — Advance hand by one step
+
+```json
+// Request
+{ "tableId": 1, "action": "call", "amount": 10, "seat": 3 }
+// action/amount/seat are optional — only needed during betting rounds
+
+// Response 200
+{
+  "success": true,
+  "result": { "status": "processed", "tableId": 1, "step": 5, "stepName": "PRE_FLOP_BETTING_ROUND" }
+}
+
+// Response 400
+{ "error": "tableId is required" }
+
+// Response 200 (rejected action)
+{
+  "success": true,
+  "result": { "status": "rejected", "tableId": 1, "error": { "code": "OUT_OF_TURN", "message": "..." } }
+}
+```
+
+**Error codes during betting:** `AWAITING_ACTION`, `OUT_OF_TURN`, `ILLEGAL_ACTION`, `BET_TOO_SMALL`, `RAISE_TOO_SMALL`, `UNKNOWN_ACTION`
+
+#### `GET /table/{tableId}` — Full table state
+
+```json
+// Response 200
+{
+  "game": {
+    "id": 1, "tableId": 1, "tableName": "Starter", "gameNo": 5,
+    "handStep": 7, "stepName": "FLOP_BETTING_ROUND",
+    "pot": 30, "communityCards": ["AH", "KD", "7C"],
+    "dealerSeat": 2, "move": 4, "status": "in_progress"
+  },
+  "players": [
+    {
+      "playerId": 1, "username": "Alice", "seat": 1, "stack": 95,
+      "bet": 10, "totalBet": 12, "status": "1", "action": "call",
+      "cards": ["AS", "KH"], "handRank": "Two Pair",
+      "bestHand": ["AS", "AH", "KH", "KD", "7C"],
+      "isWinner": false, "winnings": 0
+    }
+  ]
+}
+
+// Response 404
+{ "error": "Table not found" }
+```
+
+**Player status codes:** `1` = active, `11` = folded, `12` = all-in, `8` = busted
+
+#### `POST /table/{tableId}/reset` — New hand, keep stacks
+
+```json
+// Response 200
+{ "success": true, "gameNo": 6 }
+```
+
+#### `POST /table/{tableId}/fresh-reset` — Wipe history, fresh stacks
+
+```json
+// Response 200
+{ "success": true, "gameNo": 1 }
+```
+
+#### `POST /table/{tableId}/tip` — Tip dealer $1
+
+```json
+// Request
+{ "seat": 3 }
+
+// Response 200
+{ "success": true }
+
+// Response 400
+{ "error": "tableId and seat are required" }
+```
 
 ---
 
@@ -184,28 +264,61 @@ PokerClient/
 │   └── Tests/EditMode/
 │       ├── ApiClientTests.cs                6 tests — response deserialization
 │       ├── GameStateTests.cs                16 tests — state logic, models, winners
-│       └── CardUtilsTests.cs                17 tests — parsing, formatting, labels
+│       ├── CardUtilsTests.cs                17 tests — parsing, formatting, labels
+│       ├── AutoPlayTests.cs                 Auto-play decision logic
+│       ├── BettingCalculatorTests.cs        Bet sizing presets
+│       ├── InputValidationTests.cs          Name/bet input validation
+│       ├── MoneyFormatterTests.cs           Currency formatting
+│       ├── SeatResolverTests.cs             Seat position calculations
+│       ├── PokerConstantsTests.cs           Hand rank constants
+│       ├── HandHistoryFormatTests.cs        Action log formatting
+│       └── CardSpriteLoaderTests.cs         Sprite loading
+serverless-v2/services/holdem-processor/
+├── __tests__/
+│   ├── handler.test.js                      19 tests — all HTTP handlers + error paths
+│   ├── process-table.test.js                49 tests — 16-step state machine, betting, pots
+│   └── integration.test.js                  33 tests — full hand lifecycle, actions, resets
+docs/
+├── adr/
+│   ├── 001-option-d-unity-client.md         Why Option D
+│   ├── 002-event-driven-mvp.md              Architecture pattern choice
+│   └── 003-full-state-redraw.md             State management approach
 ```
 
 ---
 
 ## Tests
 
-**39 unit tests** — all Edit Mode (NUnit). Run in Unity Editor:
+Run all backend tests from the repo root:
 
-**Window > General > Test Runner > EditMode > Run All**
+```bash
+npm test
+```
+
+### Backend — 101 tests (Jest)
+
+```bash
+cd serverless-v2/services/holdem-processor && npm test
+```
+
+| Suite | Count | Covers |
+|-------|-------|--------|
+| handler.test.js | 19 | All HTTP handlers: health, process, getTable, reset, freshReset, tip — including 400/404/500 error paths |
+| process-table.test.js | 49 | 16-step state machine, betting rounds, blind posting, pot calculation, winner evaluation, side pots |
+| integration.test.js | 33 | Full hand lifecycle (all 16 steps), betting actions (raise/call/fold/all-in), community card dealing, reset flows, tip dealer, chip conservation, error cases |
+
+### Unity Client — 39 tests (NUnit Edit Mode)
+
+Run in Unity Editor: **Window > General > Test Runner > EditMode > Run All**
 
 | Suite | Count | Covers |
 |-------|-------|--------|
 | ApiClientTests | 6 | Health, Process, Table response deserialization, error cases |
 | GameStateTests | 16 | Showdown detection, hand completion, player status codes, winner identification, JSON parsing edge cases |
 | CardUtilsTests | 17 | Card parsing (AH, 10D, 2C, KS), suit colors, display strings, money formatting, step labels |
-
-Backend tests:
-
-```bash
-cd serverless-v2/services/holdem-processor && npm install && npm test
-```
+| AutoPlayTests | — | Auto-play decision logic (Safe, SmallRandom, Hard styles) |
+| BettingCalculatorTests | — | Bet sizing presets (2x, 3x, pot, half-pot) |
+| InputValidationTests | — | Name input, bet amount validation |
 
 ---
 
@@ -261,6 +374,56 @@ cd serverless-v2/services/holdem-processor && npm install && npm test
 - Winner seat gold pulse animation
 - Chip fly animation on bets (seat to pot)
 - "+$1" float text on dealer tip
+
+---
+
+## Implemented vs Deferred
+
+### Fully Implemented
+
+- Complete 6-seat poker table client with 16-step hand state machine
+- All API endpoints (process, getTable, reset, freshReset, tip)
+- Auto-play with 3 AI styles and 4 speed settings
+- Full betting UI (fold, call, raise, all-in, bet sizing presets)
+- Card/chip/deal/shuffle/winner animations (DOTween)
+- Sound effects (7 audio clips)
+- Home screen (name, avatar, table selection)
+- WebSocket client with polling fallback
+- 140 total tests (101 backend + 39 Unity)
+- CI pipeline (GitHub Actions)
+- Docker Compose with health checks
+
+### Stubbed / Deferred
+
+- **Play Mode tests** — Unity Play Mode tests (integration-level, testing actual MonoBehaviour lifecycle) are deferred. Edit Mode tests cover all business logic, but UI interaction flows aren't automated.
+- **Headless Unity CI** — Unity batch mode test runner not configured in GitHub Actions. Would require a Unity license in CI.
+- **Real multiplayer** — The client steps through hands against AI/bot players on the server. True real-time multi-client play (where each player is a separate Unity instance) is not implemented; the WebSocket client is wired but the server broadcasts state only.
+- **Persistent player accounts** — The home screen name/avatar selection is local to the session. No login, no cross-session persistence.
+- **Observability** — Backend has Winston structured logging. No metrics/tracing (Prometheus, OpenTelemetry) or external log sink configured.
+- **Load testing** — No k6/Artillery scripts; the backend handles single-table play fine but hasn't been stress-tested.
+
+---
+
+## Trade-offs
+
+| Decision | Trade-off | Reasoning |
+|----------|-----------|-----------|
+| Full state redraw vs delta patching | Slightly more work per UI update | At poker speed (~1 update/sec), redrawing ~50 UI elements is negligible. Delta patching adds ~200 lines of diffing logic for zero visible benefit. |
+| Edit Mode tests only | Can't test MonoBehaviour lifecycle | Edit Mode tests are instant (no scene load) and cover all business logic. Play Mode tests require scene setup, are slower, and are harder to maintain. |
+| Newtonsoft JSON vs JsonUtility | Extra package dependency | JsonUtility can't handle `List<List<string>>` or nullable types. Newtonsoft is the Unity ecosystem standard. |
+| uGUI vs UI Toolkit | UI Toolkit is more modern but less mature | uGUI has 10+ years of community resources, battle-tested on mobile. UI Toolkit's runtime support is still evolving. |
+| Mocked table-fetcher in tests vs real DB | Tests don't cover SQL layer | Integration tests use a stateful in-memory mock for the DB layer. Real DB tests would require Docker in CI. The mock still exercises the full game logic (process-table, betting, pots, cards). |
+| Single PR vs multiple PRs | Larger review surface | One PR with meaningful commit history (44 commits) tells the build story clearly. Multiple PRs would fragment context for reviewers. |
+
+---
+
+## Architecture Decision Records
+
+See [`docs/adr/`](docs/adr/) for formal ADRs:
+
+- [ADR-001: Option D — Unity Client](docs/adr/001-option-d-unity-client.md)
+- [ADR-002: Event-Driven MVP Pattern](docs/adr/002-event-driven-mvp.md)
+- [ADR-003: Full State Redraw vs Delta Patching](docs/adr/003-full-state-redraw.md)
 
 ---
 
