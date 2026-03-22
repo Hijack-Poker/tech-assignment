@@ -353,7 +353,11 @@ namespace HijackPoker.UI
 
         private void OnDestroy()
         {
+            DOTween.Kill(gameObject);
+            DOTween.Kill(transform);
             DOTween.Kill(_stackText);
+            DOTween.Kill(_actionText?.transform);
+            DOTween.Kill(_borderImage);
             if (_winnerPulseTween != null) _winnerPulseTween.Kill();
             if (_avatarRingImage != null)
             {

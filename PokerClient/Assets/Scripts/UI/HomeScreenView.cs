@@ -225,6 +225,7 @@ namespace HijackPoker.UI
                 _fadeOverlay.raycastTarget = true;
                 FadeImage(_fadeOverlay, 1f, 0.5f).SetEase(Ease.InQuad).OnComplete(() =>
                 {
+                    DOTween.KillAll();
                     SceneManager.LoadScene("PokerTable");
                 });
             });

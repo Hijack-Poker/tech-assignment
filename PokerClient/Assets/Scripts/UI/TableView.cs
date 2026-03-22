@@ -477,6 +477,7 @@ namespace HijackPoker.UI
 
         private void OnDestroy()
         {
+            DOTween.Kill(gameObject);
             _turnTimer?.StopTurnTimer();
             _celebration?.Cleanup();
             _potDisplay?.Cleanup();

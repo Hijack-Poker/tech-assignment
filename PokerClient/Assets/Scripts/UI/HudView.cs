@@ -115,6 +115,7 @@ namespace HijackPoker.UI
         {
             if (_gameManager != null && _gameManager.IsAutoPlaying)
                 _gameManager.ToggleAutoPlay();
+            DOTween.KillAll();
             SceneManager.LoadScene("HomeScene");
         }
 
