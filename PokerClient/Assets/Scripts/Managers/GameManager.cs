@@ -28,11 +28,13 @@ namespace HijackPoker.Managers
         [SerializeField] private float _autoPlaySpeed = 1f;
 
         public bool IsAutoPlaying { get; private set; }
+        public bool IsFocusedMode { get; private set; }
         public AutoPlayStyle PlayStyle { get; private set; } = AutoPlayStyle.Safe;
         public TableResponse CurrentState => _stateManager != null ? _stateManager.CurrentState : null;
 
         private bool _isProcessing;
         private Coroutine _autoPlayCoroutine;
+        private Coroutine _focusedCoroutine;
         private bool _hasRaisedThisRound;
         private int _lastBettingStep = -1;
         private HijackPoker.Api.WebSocketClient _wsClient;
@@ -78,14 +80,14 @@ namespace HijackPoker.Managers
 
                 // Start WebSocket for real-time updates (falls back gracefully)
                 ConnectWebSocket();
-
-                // Attach AI feature components
-                EnsureAIComponents();
             }
             else
             {
                 _stateManager.NotifyConnectionStatus("Error: Cannot reach holdem-processor at localhost:3030");
             }
+
+            // Attach AI feature components (always, regardless of connection)
+            EnsureAIComponents();
         }
 
         private void ConnectWebSocket()
@@ -193,6 +195,7 @@ namespace HijackPoker.Managers
 
         public void StartAutoPlayWithStyle(AutoPlayStyle style)
         {
+            StopFocusedMode();
             StopAutoPlay();
             PlayStyle = style;
             IsAutoPlaying = true;
@@ -266,6 +269,86 @@ namespace HijackPoker.Managers
             _ = AdvanceStepAsync(result.Action, result.Amount);
         }
 
+        // ── Focused Mode: auto-plays others, waits for local player ──
+
+        public void ToggleFocusedMode()
+        {
+            if (IsFocusedMode) StopFocusedMode();
+        }
+
+        public void StartFocusedMode(AutoPlayStyle style)
+        {
+            StopAutoPlay();
+            StopFocusedMode();
+            PlayStyle = style;
+            IsFocusedMode = true;
+            _hasRaisedThisRound = false;
+            _lastBettingStep = -1;
+            _focusedCoroutine = StartCoroutine(FocusedPlayCoroutine());
+        }
+
+        private void StopFocusedMode()
+        {
+            IsFocusedMode = false;
+            if (_focusedCoroutine != null)
+            {
+                StopCoroutine(_focusedCoroutine);
+                _focusedCoroutine = null;
+            }
+        }
+
+        private int ResolveLocalSeat()
+        {
+            var state = _stateManager?.CurrentState;
+            if (state == null) return 1;
+            return SeatResolver.ResolveLocalSeat(state.Players, PlayerName);
+        }
+
+        private IEnumerator FocusedPlayCoroutine()
+        {
+            while (IsFocusedMode)
+            {
+                yield return new WaitForSeconds(_autoPlaySpeed);
+                if (_isProcessing) continue;
+
+                var state = _stateManager?.CurrentState;
+                if (state?.Game == null) continue;
+
+                int step = state.Game.HandStep;
+                int move = state.Game.Move;
+                int localSeat = ResolveLocalSeat();
+
+                // Reset raise tracker on new betting round
+                if (PokerConstants.IsBettingStep(step) && step != _lastBettingStep)
+                {
+                    _hasRaisedThisRound = false;
+                    _lastBettingStep = step;
+                }
+
+                if (PokerConstants.IsBettingStep(step) && move > 0)
+                {
+                    // It's the local player's turn — pause and let them decide
+                    if (move == localSeat)
+                        continue;
+
+                    // It's another player's turn — auto-play for them
+                    var actor = state.Players?.Find(p => p.Seat == move);
+                    if (actor != null && !actor.IsFolded && !actor.IsAllIn)
+                        SubmitAutoAction(actor, state);
+                    else
+                        _ = AdvanceStepAsync();
+                }
+                else if (state.Game.Status == "completed" || step >= 15)
+                {
+                    _ = AdvanceStepAsync();
+                }
+                else
+                {
+                    _ = AdvanceStepAsync();
+                }
+            }
+        }
+
         private void EnsureAIComponents()
         {
             if (GetComponent<HandNarrator>() == null)
@@ -281,6 +364,7 @@ namespace HijackPoker.Managers
         private void OnDestroy()
         {
             StopAutoPlay();
+            StopFocusedMode();
             if (_wsClient != null)
             {
                 _wsClient.OnTableUpdate -= OnWebSocketTableUpdate;

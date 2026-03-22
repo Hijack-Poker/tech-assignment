@@ -32,10 +32,16 @@ namespace HijackPoker.UI
         private TMP_InputField _betInputField;
         private Button _betConfirmButton;
 
+        // Focused mode button
+        private Button _focusedButton;
+        private TextMeshProUGUI _focusedButtonText;
+
         private static readonly Color SelectedSpeedColor = new Color(0.17f, 0.55f, 0.92f);
         private static readonly Color DefaultSpeedColor = new Color(0.13f, 0.20f, 0.28f);
         private static readonly Color AutoPlayActiveColor = new Color(0.86f, 0.36f, 0.35f);
         private static readonly Color AutoPlayIdleColor = new Color(0.12f, 0.49f, 0.86f);
+        private static readonly Color FocusedActiveColor = new Color(0.18f, 0.72f, 0.55f);
+        private static readonly Color FocusedIdleColor = new Color(0.14f, 0.42f, 0.36f);
         private static readonly Color BetOptionColor = new Color(0.75f, 0.48f, 0.14f);
 
         private int _selectedSpeedIndex = 2;
@@ -68,7 +74,11 @@ namespace HijackPoker.UI
                 }
             }
 
+            // Create "Focused" button between Next and Auto
+            CreateFocusedButton();
+
             if (_nextStepButton != null) _nextStepButton.onClick.AddListener(OnNextStepClicked);
+            if (_focusedButton != null) _focusedButton.onClick.AddListener(OnFocusedClicked);
             if (_autoPlayButton != null) _autoPlayButton.onClick.AddListener(OnAutoPlayClicked);
             if (_foldButton != null) _foldButton.onClick.AddListener(OnFoldClicked);
             if (_callButton != null) _callButton.onClick.AddListener(OnCallClicked);
@@ -107,8 +117,43 @@ namespace HijackPoker.UI
             bool driverCanAct = inBettingStep && state?.Game != null && state.Game.Move > 0;
             ComputeActionContext(state, inBettingStep, driverCanAct);
 
+            bool anyAutoMode = _gameManager.IsAutoPlaying || _gameManager.IsFocusedMode;
             if (_nextStepButton != null)
-                _nextStepButton.interactable = !_gameManager.IsAutoPlaying && !inBettingStep;
+                _nextStepButton.interactable = !anyAutoMode && !inBettingStep;
+
+            // Update focused button visual
+            if (_focusedButton != null)
+            {
+                var focImg = _focusedButton.GetComponent<Image>();
+                if (focImg != null)
+                    focImg.color = _gameManager.IsFocusedMode ? FocusedActiveColor : FocusedIdleColor;
+                if (_focusedButtonText != null)
+                {
+                    if (_gameManager.IsFocusedMode)
+                    {
+                        string focStyle = _gameManager.PlayStyle switch
+                        {
+                            AutoPlayStyle.Safe => "Safe",
+                            AutoPlayStyle.SmallRandom => "Small",
+                            AutoPlayStyle.Hard => "Hard",
+                            _ => ""
+                        };
+                        _focusedButtonText.text = $"STOP\n<size=10>({focStyle})</size>";
+                    }
+                    else
+                    {
+                        string nextFoc = _nextFocusedStyle switch
+                        {
+                            AutoPlayStyle.Safe => "Safe",
+                            AutoPlayStyle.SmallRandom => "Small",
+                            AutoPlayStyle.Hard => "Hard",
+                            _ => ""
+                        };
+                        _focusedButtonText.text = $"FOCUS\n<size=10>{nextFoc}</size>";
+                    }
+                }
+            }
+
             if (_autoPlayButton == null) return;
 
             var img = _autoPlayButton.GetComponent<Image>();
@@ -140,9 +185,13 @@ namespace HijackPoker.UI
                 }
             }
 
-            // Show action panel only during betting when NOT auto-playing
+            // Show action panel during betting when NOT auto-playing,
+            // or in focused mode when it's the local player's turn
+            bool showActions = inBettingStep && !_gameManager.IsAutoPlaying;
+            if (_gameManager.IsFocusedMode && inBettingStep)
+                showActions = CanLocalPlayerAct(state);
             if (_actionPanel != null)
-                _actionPanel.SetActive(inBettingStep && !_gameManager.IsAutoPlaying);
+                _actionPanel.SetActive(showActions);
             if (_foldButton != null) _foldButton.interactable = _canActNow;
             if (_callButton != null) _callButton.interactable = _canActNow;
 
@@ -168,6 +217,8 @@ namespace HijackPoker.UI
                     else
                         _actionHintText.text = $"Your turn (20s): Fold, Call {_currentToCall:0.##}, or Raise";
                 }
+                else if (_gameManager.IsFocusedMode)
+                    _actionHintText.text = $"Focused: seat {state.Game.Move} is thinking...";
                 else _actionHintText.text = $"Acting seat {state.Game.Move}: waiting for action";
             }
         }
@@ -202,6 +253,89 @@ namespace HijackPoker.UI
         }
 
         private AutoPlayStyle _nextAutoStyle = AutoPlayStyle.Safe;
+
+        private AutoPlayStyle _nextFocusedStyle = AutoPlayStyle.Safe;
+
+        private void OnFocusedClicked()
+        {
+            if (_gameManager == null) return;
+
+            if (_gameManager.IsFocusedMode)
+            {
+                _gameManager.ToggleFocusedMode();
+                return;
+            }
+
+            // If auto-play is running, stop it first
+            if (_gameManager.IsAutoPlaying)
+                _gameManager.ToggleAutoPlay();
+
+            _gameManager.StartFocusedMode(_nextFocusedStyle);
+
+            // Queue up next style for when they stop and click again
+            _nextFocusedStyle = _nextFocusedStyle switch
+            {
+                AutoPlayStyle.Safe => AutoPlayStyle.SmallRandom,
+                AutoPlayStyle.SmallRandom => AutoPlayStyle.Hard,
+                _ => AutoPlayStyle.Safe,
+            };
+        }
+
+        private void CreateFocusedButton()
+        {
+            // Place the button as a sibling of NextStepButton or AutoPlayButton
+            Transform parent = null;
+            int siblingIndex = -1;
+
+            if (_autoPlayButton != null)
+            {
+                parent = _autoPlayButton.transform.parent;
+                siblingIndex = _autoPlayButton.transform.GetSiblingIndex();
+            }
+            else if (_nextStepButton != null)
+            {
+                parent = _nextStepButton.transform.parent;
+                siblingIndex = _nextStepButton.transform.GetSiblingIndex() + 1;
+            }
+
+            if (parent == null) return;
+
+            var go = new GameObject("FocusedButton", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.color = FocusedIdleColor;
+            var le = go.GetComponent<LayoutElement>();
+            le.preferredHeight = 40f;
+
+            // Copy sizing from auto play button if available
+            if (_autoPlayButton != null)
+            {
+                var autoLe = _autoPlayButton.GetComponent<LayoutElement>();
+                if (autoLe != null)
+                    le.preferredWidth = autoLe.preferredWidth;
+            }
+
+            var txtGO = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            txtGO.transform.SetParent(go.transform, false);
+            var txtRt = txtGO.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero;
+            txtRt.offsetMax = Vector2.zero;
+
+            _focusedButtonText = txtGO.GetComponent<TextMeshProUGUI>();
+            _focusedButtonText.text = "FOCUSED";
+            _focusedButtonText.fontSize = 14;
+            _focusedButtonText.fontStyle = FontStyles.Bold;
+            _focusedButtonText.alignment = TextAlignmentOptions.Center;
+            _focusedButtonText.color = Color.white;
+
+            _focusedButton = go.GetComponent<Button>();
+
+            // Position between Next and Auto
+            if (siblingIndex >= 0)
+                go.transform.SetSiblingIndex(siblingIndex);
+        }
 
         private void OnSpeedSelected(int index)
         {

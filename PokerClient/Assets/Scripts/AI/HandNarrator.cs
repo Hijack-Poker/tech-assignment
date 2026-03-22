@@ -83,14 +83,14 @@ namespace HijackPoker.AI
             int step = state.Game.HandStep;
             int gameNo = state.Game.GameNo;
 
-            // Fire at step 14-15, once per hand
+            // Only fire at step 14-15, once per hand
             if (step < 14 || gameNo == _lastNarratedGameNo) return;
-            _lastNarratedGameNo = gameNo;
 
-            // Find winners with actual winnings
+            // Find winners with actual winnings — don't lock gameNo until we have winners
             var winners = state.Players.Where(p => p.IsWinner && p.Winnings > 0).ToList();
             if (winners.Count == 0) return;
 
+            _lastNarratedGameNo = gameNo;
             string narration = BuildNarration(winners, state, gameNo);
             ShowBanner(narration);
         }

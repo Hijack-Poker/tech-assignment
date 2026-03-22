@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -16,20 +14,18 @@ namespace HijackPoker.AI
         private TableStateManager _stateManager;
         private int _lastProcessedGameNo = -1;
 
-        // Per-player tracking
         private readonly Dictionary<int, PlayerTiltData> _tiltData = new();
-
-        // UI: dot indicators per seat
-        private readonly Dictionary<int, Image> _dots = new();
 
         // Toast UI
         private GameObject _toastPanel;
         private TextMeshProUGUI _toastText;
         private CanvasGroup _toastCG;
 
-        private static readonly Color GreenTilt = new Color(0.2f, 0.8f, 0.2f);
+        // Name text overlays on seats (only shown for yellow/red)
+        private readonly Dictionary<int, GameObject> _seatWarnings = new();
+
         private static readonly Color YellowTilt = new Color(0.95f, 0.85f, 0.2f);
-        private static readonly Color RedTilt = new Color(0.9f, 0.2f, 0.15f);
+        private static readonly Color RedTilt = new Color(0.95f, 0.25f, 0.2f);
 
         private class PlayerTiltData
         {
@@ -71,18 +67,13 @@ namespace HijackPoker.AI
         {
             _tiltData.Clear();
             _lastProcessedGameNo = -1;
-            foreach (var kvp in _dots)
-            {
-                if (kvp.Value != null)
-                    kvp.Value.color = GreenTilt;
-            }
+            ClearSeatWarnings();
         }
 
         private void OnStateChanged(TableResponse state)
         {
             if (state?.Game == null || state.Players == null) return;
 
-            // Initialize/update peak stacks every state change
             foreach (var p in state.Players)
             {
                 if (!_tiltData.ContainsKey(p.Seat))
@@ -90,7 +81,7 @@ namespace HijackPoker.AI
                     _tiltData[p.Seat] = new PlayerTiltData
                     {
                         Username = p.Username,
-                        PeakStack = p.Stack,
+                        PeakStack = p.Stack + p.TotalBet,
                         CurrentStack = p.Stack,
                     };
                 }
@@ -99,12 +90,12 @@ namespace HijackPoker.AI
                     var data = _tiltData[p.Seat];
                     data.Username = p.Username;
                     data.CurrentStack = p.Stack;
-                    if (p.Stack > data.PeakStack)
-                        data.PeakStack = p.Stack;
+                    float total = p.Stack + p.TotalBet;
+                    if (total > data.PeakStack)
+                        data.PeakStack = total;
                 }
             }
 
-            // Process completed hands (step 14-15), once per hand
             int step = state.Game.HandStep;
             int gameNo = state.Game.GameNo;
             if (step < 14 || gameNo == _lastProcessedGameNo) return;
@@ -116,23 +107,22 @@ namespace HijackPoker.AI
 
                 data.HandsPlayed++;
 
-                // Track win/loss streaks
                 if (p.IsWinner && p.Winnings > 0)
+                {
                     data.ConsecutiveLosses = 0;
+                    // Winning resets tilt warning so it can fire again
+                    data.WasRedWarned = false;
+                }
                 else if (!p.IsFolded)
                     data.ConsecutiveLosses++;
 
-                // Track all-in and fold frequency
                 if (p.IsAllIn) data.AllInCount++;
                 if (p.IsFolded) data.FoldCount++;
 
-                // Compute tilt score
                 data.TiltScore = ComputeTiltScore(data);
             }
 
-            // Update UI
-            EnsureDots(state);
-            UpdateDots();
+            UpdateSeatWarnings(state);
             CheckRedWarnings();
         }
 
@@ -140,24 +130,24 @@ namespace HijackPoker.AI
         {
             float score = 0f;
 
-            // Consecutive losses (0.15 per loss, max 0.45)
+            // Consecutive losses: 0.15 per loss, max 0.45
             score += Mathf.Min(data.ConsecutiveLosses * 0.15f, 0.45f);
 
-            // Stack decline from peak (0-0.3)
+            // Stack decline from peak: 0-0.3
             if (data.PeakStack > 0f)
             {
                 float decline = 1f - (data.CurrentStack / data.PeakStack);
                 score += Mathf.Clamp(decline, 0f, 1f) * 0.3f;
             }
 
-            // All-in frequency (0-0.15)
+            // All-in frequency: 0-0.15
             if (data.HandsPlayed > 0)
             {
                 float allInRate = (float)data.AllInCount / data.HandsPlayed;
                 score += Mathf.Min(allInRate * 0.5f, 0.15f);
             }
 
-            // Low fold rate suggests overplaying (0-0.1)
+            // Low fold rate: 0-0.1
             if (data.HandsPlayed >= 3)
             {
                 float foldRate = (float)data.FoldCount / data.HandsPlayed;
@@ -168,61 +158,81 @@ namespace HijackPoker.AI
             return Mathf.Clamp01(score);
         }
 
-        private void EnsureDots(TableResponse state)
+        private void UpdateSeatWarnings(TableResponse state)
         {
-            if (_dots.Count > 0) return;
-
-            // Find all SeatView GameObjects in scene
             var seatViews = FindObjectsOfType<SeatView>();
-            foreach (var sv in seatViews)
+
+            foreach (var kvp in _tiltData)
             {
-                string goName = sv.gameObject.name;
-                if (!goName.StartsWith("Seat") || !int.TryParse(goName.Substring(4), out int seatNum))
+                int seat = kvp.Key;
+                var data = kvp.Value;
+
+                // Only show visual for yellow (>0.3) or red (>0.6)
+                if (data.TiltScore <= 0.3f)
+                {
+                    HideSeatWarning(seat);
                     continue;
+                }
 
-                if (_dots.ContainsKey(seatNum)) continue;
+                // Find the SeatView for this seat
+                SeatView sv = null;
+                foreach (var s in seatViews)
+                {
+                    string goName = s.gameObject.name;
+                    if (goName.StartsWith("Seat") && int.TryParse(goName.Substring(4), out int sn) && sn == seat)
+                    {
+                        sv = s;
+                        break;
+                    }
+                }
+                if (sv == null) continue;
 
-                // Create small colored dot at top-right of seat
-                var dotGO = new GameObject($"TiltDot_{seatNum}", typeof(RectTransform), typeof(Image));
-                dotGO.transform.SetParent(sv.transform, false);
-
-                var rt = dotGO.GetComponent<RectTransform>();
-                rt.anchorMin = new Vector2(1f, 1f);
-                rt.anchorMax = new Vector2(1f, 1f);
-                rt.pivot = new Vector2(1f, 1f);
-                rt.anchoredPosition = new Vector2(-4f, -4f);
-                rt.sizeDelta = new Vector2(10f, 10f);
-
-                var img = dotGO.GetComponent<Image>();
-                img.color = GreenTilt;
-
-                // Make it circular by adding a mask or just use default sprite
-                // Unity's default white sprite renders as a square, which is fine for a small indicator
-
-                _dots[seatNum] = img;
+                ShowSeatWarning(seat, sv, data);
             }
         }
 
-        private void UpdateDots()
+        private void ShowSeatWarning(int seat, SeatView sv, PlayerTiltData data)
         {
-            foreach (var kvp in _tiltData)
+            bool isRed = data.TiltScore > 0.6f;
+            Color color = isRed ? RedTilt : YellowTilt;
+            string label = isRed ? "TILTING" : "WARMING UP";
+
+            if (!_seatWarnings.TryGetValue(seat, out var go) || go == null)
             {
-                if (!_dots.TryGetValue(kvp.Key, out var dot) || dot == null) continue;
+                go = new GameObject($"TiltWarn_{seat}", typeof(RectTransform), typeof(TextMeshProUGUI));
+                go.transform.SetParent(sv.transform, false);
 
-                Color targetColor;
-                float score = kvp.Value.TiltScore;
-                if (score > 0.6f)
-                    targetColor = RedTilt;
-                else if (score > 0.3f)
-                    targetColor = YellowTilt;
-                else
-                    targetColor = GreenTilt;
+                var rt = go.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0f);
+                rt.anchorMax = new Vector2(0.5f, 0f);
+                rt.pivot = new Vector2(0.5f, 1f);
+                rt.anchoredPosition = new Vector2(0f, -2f);
+                rt.sizeDelta = new Vector2(100f, 16f);
 
-                DOTween.Kill(dot);
-                DOTween.To(() => dot.color, c => dot.color = c, targetColor, 0.5f)
-                    .SetEase(Ease.OutCubic)
-                    .SetTarget(dot);
+                var tmp = go.GetComponent<TextMeshProUGUI>();
+                tmp.fontSize = 9;
+                tmp.alignment = TextAlignmentOptions.Center;
+                tmp.fontStyle = FontStyles.Bold;
+
+                _seatWarnings[seat] = go;
             }
+
+            go.SetActive(true);
+            var text = go.GetComponent<TextMeshProUGUI>();
+            text.text = label;
+            text.color = color;
+        }
+
+        private void HideSeatWarning(int seat)
+        {
+            if (_seatWarnings.TryGetValue(seat, out var go) && go != null)
+                go.SetActive(false);
+        }
+
+        private void ClearSeatWarnings()
+        {
+            foreach (var kvp in _seatWarnings)
+                if (kvp.Value != null) kvp.Value.SetActive(false);
         }
 
         private void CheckRedWarnings()
@@ -233,7 +243,7 @@ namespace HijackPoker.AI
                 if (data.TiltScore > 0.6f && !data.WasRedWarned)
                 {
                     data.WasRedWarned = true;
-                    ShowToast($"⚠ {data.Username} may be on tilt!");
+                    ShowToast($"{data.Username} is on tilt! (Lost {data.ConsecutiveLosses} in a row, stack down {(1f - data.CurrentStack / data.PeakStack):P0})");
                 }
             }
         }
@@ -251,8 +261,8 @@ namespace HijackPoker.AI
 
             DOTween.Sequence()
                 .Append(DOTween.To(() => _toastCG.alpha, x => _toastCG.alpha = x, 1f, 0.3f))
-                .AppendInterval(4f)
-                .Append(DOTween.To(() => _toastCG.alpha, x => _toastCG.alpha = x, 0f, 0.8f))
+                .AppendInterval(5f)
+                .Append(DOTween.To(() => _toastCG.alpha, x => _toastCG.alpha = x, 0f, 1f))
                 .OnComplete(() => _toastPanel.SetActive(false))
                 .SetTarget(_toastCG);
         }
@@ -266,31 +276,31 @@ namespace HijackPoker.AI
 
             _toastPanel = new GameObject("TiltWarningToast", typeof(RectTransform), typeof(CanvasGroup), typeof(Image));
             _toastPanel.transform.SetParent(canvas.transform, false);
+            _toastPanel.transform.SetAsLastSibling();
 
             var rt = _toastPanel.GetComponent<RectTransform>();
             rt.anchorMin = new Vector2(0.5f, 1f);
             rt.anchorMax = new Vector2(0.5f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
-            rt.anchoredPosition = new Vector2(0f, -80f);
-            rt.sizeDelta = new Vector2(300f, 40f);
+            rt.anchoredPosition = new Vector2(0f, -50f);
+            rt.sizeDelta = new Vector2(380f, 36f);
 
             var bg = _toastPanel.GetComponent<Image>();
-            bg.color = new Color(0.35f, 0.08f, 0.08f, 0.92f);
+            bg.color = new Color(0.4f, 0.06f, 0.06f, 0.94f);
 
             _toastCG = _toastPanel.GetComponent<CanvasGroup>();
             _toastCG.alpha = 0f;
 
             var textGO = new GameObject("ToastText", typeof(RectTransform), typeof(TextMeshProUGUI));
             textGO.transform.SetParent(_toastPanel.transform, false);
-
             var textRt = textGO.GetComponent<RectTransform>();
             textRt.anchorMin = Vector2.zero;
             textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(8f, 4f);
-            textRt.offsetMax = new Vector2(-8f, -4f);
+            textRt.offsetMin = new Vector2(10f, 4f);
+            textRt.offsetMax = new Vector2(-10f, -4f);
 
             _toastText = textGO.GetComponent<TextMeshProUGUI>();
-            _toastText.fontSize = 14;
+            _toastText.fontSize = 12;
             _toastText.color = new Color(1f, 0.85f, 0.85f);
             _toastText.alignment = TextAlignmentOptions.Center;
             _toastText.fontStyle = FontStyles.Bold;
@@ -301,11 +311,8 @@ namespace HijackPoker.AI
         private void OnDestroy()
         {
             DOTween.Kill(_toastCG);
-            foreach (var kvp in _dots)
-            {
-                if (kvp.Value != null)
-                    DOTween.Kill(kvp.Value);
-            }
+            foreach (var kvp in _seatWarnings)
+                if (kvp.Value != null) Destroy(kvp.Value);
             if (_toastPanel != null) Destroy(_toastPanel);
         }
     }

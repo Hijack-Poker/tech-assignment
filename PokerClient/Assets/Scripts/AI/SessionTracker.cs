@@ -32,8 +32,8 @@ namespace HijackPoker.AI
         public int AllInCount;
 
         // VPIP tracking
-        public int VpipHands; // hands where player voluntarily put money in
-        public int VpipEligibleHands; // hands where player had a chance to act
+        public int VpipHands;
+        public int VpipEligibleHands;
         public float VPIP => VpipEligibleHands > 0 ? (float)VpipHands / VpipEligibleHands : 0f;
     }
 
@@ -45,10 +45,10 @@ namespace HijackPoker.AI
 
         private readonly SessionStats _stats = new SessionStats();
         private int _lastProcessedGameNo = -1;
+        private int _handStartGameNo = -1; // separate tracker for hand-start capture
         private int _lastBettingStep = -1;
         private bool _vpipTrackedThisHand;
         private float _stackAtHandStart;
-        private bool _handStartTracked;
 
         public event Action<SessionStats> OnStatsUpdated;
         public SessionStats CurrentStats => _stats;
@@ -79,16 +79,15 @@ namespace HijackPoker.AI
         private void OnTableReset()
         {
             _lastProcessedGameNo = -1;
+            _handStartGameNo = -1;
             _lastBettingStep = -1;
             _vpipTrackedThisHand = false;
-            _handStartTracked = false;
         }
 
         private void OnStateChanged(TableResponse state)
         {
             if (state?.Game == null || state.Players == null) return;
 
-            // Resolve local player
             ResolveLocalPlayer(state);
             if (_localSeat <= 0) return;
 
@@ -98,18 +97,22 @@ namespace HijackPoker.AI
             int step = state.Game.HandStep;
             int gameNo = state.Game.GameNo;
 
-            // Track starting stack at beginning of hand
-            if (!_handStartTracked || gameNo != _lastProcessedGameNo)
+            // Capture starting stack ONCE when a new hand begins
+            if (gameNo != _handStartGameNo)
             {
+                _handStartGameNo = gameNo;
+
                 if (_stats.StartingStack <= 0f)
-                    _stats.StartingStack = localPlayer.Stack;
+                    _stats.StartingStack = localPlayer.Stack + localPlayer.TotalBet;
+
+                // Capture stack at hand start (stack + any blinds already posted)
                 _stackAtHandStart = localPlayer.Stack + localPlayer.TotalBet;
-                _handStartTracked = true;
                 _vpipTrackedThisHand = false;
                 _lastBettingStep = -1;
+                _lastActionKey.Clear();
             }
 
-            // Track VPIP during betting steps (5/7/9/11)
+            // Track VPIP during betting steps
             if (PokerConstants.IsBettingStep(step) && step != _lastBettingStep)
             {
                 _lastBettingStep = step;
@@ -120,8 +123,8 @@ namespace HijackPoker.AI
             if (PokerConstants.IsBettingStep(step))
                 TrackActions(localPlayer);
 
-            // Process completed hand at step 14-15
-            if (step >= 14 && gameNo != _lastProcessedGameNo)
+            // Process completed hand — wait for step 15 so winnings are populated
+            if (step >= 15 && gameNo != _lastProcessedGameNo)
             {
                 _lastProcessedGameNo = gameNo;
                 ProcessCompletedHand(localPlayer, state.Game);
@@ -146,7 +149,6 @@ namespace HijackPoker.AI
 
         private void TrackVPIP(PlayerState player, GameState game)
         {
-            // Only count first betting round for VPIP eligibility
             if (game.HandStep == 5 && !_vpipTrackedThisHand)
             {
                 _stats.VpipEligibleHands++;
@@ -158,7 +160,6 @@ namespace HijackPoker.AI
                     _vpipTrackedThisHand = true;
                 }
             }
-            // Also track if they act later (e.g. raised preflop but we missed the first check)
             if (!_vpipTrackedThisHand)
             {
                 string action = player.Action?.ToLower();
@@ -195,8 +196,6 @@ namespace HijackPoker.AI
         {
             _stats.HandsPlayed++;
 
-            float profit = player.Stack - _stackAtHandStart;
-
             if (player.IsWinner && player.Winnings > 0)
             {
                 _stats.HandsWon++;
@@ -204,7 +203,6 @@ namespace HijackPoker.AI
                 if (player.Winnings > _stats.BiggestWin)
                     _stats.BiggestWin = player.Winnings;
 
-                // Streak
                 if (_stats.CurrentStreak >= 0)
                     _stats.CurrentStreak++;
                 else
@@ -213,7 +211,6 @@ namespace HijackPoker.AI
                 if (_stats.CurrentStreak > _stats.BestStreak)
                     _stats.BestStreak = _stats.CurrentStreak;
 
-                // Position wins
                 if (player.Seat == game.DealerSeat)
                     _stats.WinsFromButton++;
                 else if (player.Seat == game.SmallBlindSeat || player.Seat == game.BigBlindSeat)
@@ -227,7 +224,6 @@ namespace HijackPoker.AI
                 if (loss > _stats.BiggestLoss)
                     _stats.BiggestLoss = loss;
 
-                // Streak
                 if (_stats.CurrentStreak <= 0)
                     _stats.CurrentStreak--;
                 else
@@ -238,9 +234,6 @@ namespace HijackPoker.AI
             }
 
             _stats.TotalProfit = player.Stack - _stats.StartingStack;
-
-            // Reset action tracking for next hand
-            _lastActionKey.Clear();
         }
     }
 }
