@@ -25,6 +25,10 @@ build/
 fly.toml
 unity-client/
 
+# Asset packs (originals) and screenshots
+PokerClient/Assets/Screenshots/
+PokerClient/Assets/SIMPLE Avatars Icons/
+
 # Unity
 PokerClient/[Ll]ibrary/
 PokerClient/[Tt]emp/
