@@ -26,7 +26,15 @@ cd tech-assignment
 cp .env.example .env
 ```
 
-### Step 2: Start the backend with Docker
+### Step 2: Install shared dependencies
+
+The holdem-processor depends on shared game logic code. Install its dependencies first:
+
+```bash
+cd serverless-v2/shared && npm install && cd ../..
+```
+
+### Step 3: Start the backend with Docker
 
 ```bash
 docker compose --profile engine up -d
@@ -41,7 +49,7 @@ This spins up 7 containers:
 | DynamoDB Local | NoSQL store (WebSocket connections) | 8000 |
 | ElasticMQ | SQS message queue mock | 9324 |
 | EventBridge Mock | Event bus mock | 4010 |
-| **Holdem Processor** | **Game engine REST API** | **3030** |
+| **Holdem Processor** | **Game engine REST API (serverless-offline)** | **3030** |
 | Cash Game Broadcast | WebSocket broadcast service | 3032 |
 
 First run takes **2-3 minutes** (npm install inside containers). Wait for all to be healthy:
@@ -50,7 +58,9 @@ First run takes **2-3 minutes** (npm install inside containers). Wait for all to
 docker compose ps
 ```
 
-### Step 3: Verify the backend
+> **Note:** The holdem-processor runs via `serverless-offline` on Node 20. The original `docker-compose.yml` specified Node 22 which is incompatible with `serverless-offline` — this is the only infrastructure change made.
+
+### Step 4: Verify the backend
 
 ```bash
 curl http://localhost:3030/health
@@ -60,7 +70,7 @@ curl http://localhost:3030/table/1
 # -> Full table state with 6 players
 ```
 
-### Step 4: Open the Unity project
+### Step 5: Open the Unity project
 
 1. Open **Unity Hub**
 2. Click **Open**
@@ -68,7 +78,7 @@ curl http://localhost:3030/table/1
 4. Unity Hub detects the project — if prompted, install the matching Editor version
 5. Wait for import to complete (first time takes a few minutes)
 
-### Step 5: Play
+### Step 6: Play
 
 1. In Unity Editor, open **Assets/Scenes/HomeScene.unity**
 2. Press the **Play** button
@@ -96,6 +106,55 @@ docker compose --profile engine down -v     # Stop + wipe all database data
 | **RESTART** (top right) | Fresh reset — wipes game history, all players back to initial stacks |
 | **TIP $1** (below dealer) | Tip the dealer — deducts $1 from acting player with chip animation |
 | **X** (top right) | Exit to home screen |
+
+---
+
+## Engine Modifications — Why and What
+
+The skeleton holdem-processor was designed as an AWS Lambda/SQS pipeline that auto-advances through all 16 hand steps with no player input. To build an interactive poker client (FR-2: "Next Step button", FR-6: "Hand History"), two changes to the engine were necessary:
+
+### 1. Node Version Fix (`docker-compose.yml` — 1 line)
+
+**Why:** The `serverless-offline` plugin crashes on Node 22 (the image specified in the original `docker-compose.yml`). Pinned the holdem-processor service to `node:20-alpine` so `serverless-offline` runs correctly. Also added `cd /app/shared && npm install` to the startup command since the shared dependencies (including `pokersolver`) need to be installed inside the container.
+
+The 3 additional endpoints for features I built are registered in `serverless.offline.yml`:
+
+```
+POST /table/{tableId}/reset        → New hand, carry stacks
+POST /table/{tableId}/fresh-reset  → Wipe history, fresh buy-ins
+POST /table/{tableId}/tip          → Tip dealer $1
+```
+
+### 2. Player Action Support (`handler.js`, `process-table.js`, `betting.js`)
+
+**Why:** The original `/process` endpoint accepted only `{ tableId }` and auto-advanced every step — including betting rounds. There was no way for a player to fold, call, or raise. The assignment requires "Next Step button triggers one state advance" (FR-2) and the challenge description shows betting as a core mechanic.
+
+**What changed:**
+- `/process` now optionally accepts `{ action, amount, seat }` during betting rounds
+- `process-table.js` passes the action to `bettingRound()` instead of auto-advancing
+- `betting.js` gained `validateAction()` and `getValidActions()` to enforce poker rules (min raise, legal actions per state)
+- `cards.js` gained `evaluateAllHands()` for showdown hand ranking using the existing `pokersolver` dependency
+- `table-fetcher.js` gained `resetTable()`, `freshResetTable()`, `tipDealer()` for the bonus features
+- `pots.js` and `players.js` received bug fixes for pot calculation edge cases and seat rotation
+
+### 3. Schema Addition (`01-schema.sql` — 3 lines)
+
+Added `best_hand`, `is_winner`, and `last_raise_size` columns to support showdown display and proper raise tracking.
+
+### What was NOT changed
+
+- The original SQS Lambda handler (`handler.handler`) is untouched
+- The 16-step hand state machine flow is unchanged — same steps in the same order
+- All original test files still pass
+- The engine still runs via `serverless-offline` (no custom server added)
+- No new infrastructure services or external dependencies
+
+### Test Coverage for Engine Changes
+
+All engine modifications are covered by 101 Jest tests:
+- `handler.test.js` (19 tests) — all HTTP handlers including error paths
+- `process-table.test.js` (49 tests) — full 16-step state machine with betting
+- `integration.test.js` (33 tests) — end-to-end hand lifecycle with player actions
 
 ---
 
@@ -289,16 +348,11 @@ docs/
 
 ## Tests
 
-Run all backend tests from the repo root:
-
-```bash
-npm test
-```
-
 ### Backend — 101 tests (Jest)
 
 ```bash
-cd serverless-v2/services/holdem-processor && npm test
+cd serverless-v2/shared && npm install && cd ../..
+cd serverless-v2/services/holdem-processor && npm install && npm test
 ```
 
 | Suite | Count | Covers |

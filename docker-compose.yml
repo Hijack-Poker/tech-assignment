@@ -200,7 +200,7 @@ services:
       retries: 5
 
   holdem-processor:
-    image: node:22-alpine
+    image: node:20-alpine  # pinned to Node 20 — serverless-offline crashes on Node 22
     profiles: [engine]
     ports:
       - "${HOLDEM_PROCESSOR_PORT:-3030}:3030"
@@ -237,7 +237,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+        cd /app/shared && npm install && cd /app && npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
 
   cash-game-broadcast:
     image: node:22-alpine
