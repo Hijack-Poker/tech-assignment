@@ -23,7 +23,6 @@ namespace HijackPoker.UI
         private Button _restartButton;
         private Button _helpButton;
         private HelpPopupView _helpPopup;
-        private float _displayedPot;
 
         private void Awake()
         {
@@ -52,15 +51,9 @@ namespace HijackPoker.UI
 
             _handNumberText.text = $"Hand #{game.GameNo}";
 
-            // Pot tween
-            DOTween.Kill(_potText);
-            DOVirtual.Float(_displayedPot, game.Pot, 0.4f, value =>
-            {
-                _displayedPot = value;
-                _potText.text = $"Pot: {MoneyFormatter.Format(value)}";
-            }).SetEase(Ease.OutCubic).SetTarget(_potText);
-
-            if (_potChipImage != null) _potChipImage.gameObject.SetActive(game.Pot > 0);
+            // Hide pot display in HUD (shown on table instead)
+            if (_potText != null) _potText.gameObject.SetActive(false);
+            if (_potChipImage != null) _potChipImage.gameObject.SetActive(false);
 
             if (game.Move > 0)
             {
@@ -188,7 +181,6 @@ namespace HijackPoker.UI
 
         private void OnDestroy()
         {
-            DOTween.Kill(_potText);
             if (_phaseLabel != null) _phaseLabel.transform.DOKill();
         }
     }

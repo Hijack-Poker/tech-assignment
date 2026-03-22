@@ -209,11 +209,23 @@ namespace HijackPoker.AI
                 }
             }
 
-            // Hand complete — wait for winners to be populated
+            // Hand complete — detect winners from multiple sources
             if (step >= 15 && gameNo != _completedGameNo)
             {
-                var winners = state.Players.Where(p => p.IsWinner && p.Winnings > 0).ToList();
-                if (winners.Count > 0 || state.Players.All(p => p.IsFolded || p.Winnings > 0))
+                bool ready = state.Players.Any(p => p.IsWinnerFlag || p.Winnings > 0) ||
+                    (state.Game.Winners != null && state.Game.Winners.Count > 0);
+
+                // Fallback: detect winner by stack increase
+                if (!ready)
+                {
+                    foreach (var p in state.Players)
+                    {
+                        if (!p.IsFolded && _startingStacks.TryGetValue(p.Seat, out float ss) && p.Stack > ss)
+                        { ready = true; break; }
+                    }
+                }
+
+                if (ready)
                 {
                     _completedGameNo = gameNo;
                     FinalizeHand(state);
@@ -288,7 +300,28 @@ namespace HijackPoker.AI
         {
             var occupied = state.Players.Select(p => p.Seat).Where(s => s > 0).OrderBy(s => s).ToList();
             int showdownCount = state.Players.Count(p => !p.IsFolded);
-            var winners = state.Players.Where(p => p.IsWinner && p.Winnings > 0).ToList();
+
+            // Build winner set from all available sources
+            var winnerSeats = new HashSet<int>();
+            foreach (var p in state.Players)
+            {
+                if (p.IsWinnerFlag || p.Winnings > 0)
+                    winnerSeats.Add(p.Seat);
+            }
+            if (state.Game.Winners != null)
+                foreach (var w in state.Game.Winners)
+                    winnerSeats.Add(w.Seat);
+
+            // Fallback: detect winners by stack increase
+            if (winnerSeats.Count == 0)
+            {
+                foreach (var p in state.Players)
+                {
+                    _startingStacks.TryGetValue(p.Seat, out float ss);
+                    if (!p.IsFolded && p.Stack > ss)
+                        winnerSeats.Add(p.Seat);
+                }
+            }
 
             var snapshot = new HandSnapshot
             {
@@ -302,22 +335,34 @@ namespace HijackPoker.AI
                 ReachedShowdown = showdownCount >= 2 && state.Game.HandStep >= 12,
                 BettingRoundsCompleted = _highestBettingRound + 1,
                 Outcome = showdownCount < 2 ? HandOutcome.FoldWin
-                    : winners.Count > 1 ? HandOutcome.SplitPot
+                    : winnerSeats.Count > 1 ? HandOutcome.SplitPot
                     : HandOutcome.ShowdownWin,
             };
 
             foreach (var p in state.Players)
             {
                 _startingStacks.TryGetValue(p.Seat, out float startStack);
+                bool isWinner = winnerSeats.Contains(p.Seat);
+
+                // Calculate winnings from API or stack change
+                float winnings = p.Winnings;
+                if (isWinner && winnings <= 0)
+                    winnings = Mathf.Max(0f, p.Stack - startStack);
+
+                // Calculate total invested
+                float invested = isWinner
+                    ? Mathf.Max(0f, startStack - p.Stack + winnings)
+                    : Mathf.Max(0f, startStack - p.Stack);
+
                 var record = new PlayerHandRecord
                 {
                     Seat = p.Seat,
                     Username = p.Username,
                     StartingStack = startStack,
                     EndingStack = p.Stack,
-                    TotalInvested = Mathf.Max(0f, startStack - p.Stack + p.Winnings),
-                    Winnings = p.Winnings,
-                    IsWinner = p.IsWinner && p.Winnings > 0,
+                    TotalInvested = invested,
+                    Winnings = winnings,
+                    IsWinner = isWinner,
                     VoluntarilyPutMoneyIn = _vpipPlayers.Contains(p.Seat),
                     RaisedPreflop = _pfrPlayers.Contains(p.Seat),
                     HandRank = !string.IsNullOrEmpty(p.HandRank) ? p.HandRank : null,

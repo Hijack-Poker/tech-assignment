@@ -88,6 +88,45 @@ namespace HijackPoker.AI
         private void OnTableReset()
         {
             _localSeat = 0;
+            ResetStats();
+        }
+
+        private void ResetStats()
+        {
+            _stats.HandsPlayed = 0;
+            _stats.HandsWon = 0;
+            _stats.BiggestWin = 0f;
+            _stats.BiggestLoss = 0f;
+            _stats.TotalProfit = 0f;
+            _stats.StartingStack = 0f;
+            _stats.CurrentStreak = 0;
+            _stats.BestStreak = 0;
+            _stats.WorstStreak = 0;
+            _stats.VpipCount = 0;
+            _stats.PfrCount = 0;
+            _stats.VpipEligibleHands = 0;
+            _stats.PostflopBets = 0;
+            _stats.PostflopCalls = 0;
+            _stats.FoldCount = 0;
+            _stats.CallCount = 0;
+            _stats.RaiseCount = 0;
+            _stats.AllInCount = 0;
+            _stats.WentToShowdownCount = 0;
+            _stats.WonAtShowdownCount = 0;
+            _stats.ContinuationBets = 0;
+            _stats.ContinuationBetOpps = 0;
+            _stats.RiverBets = 0;
+            _stats.RiverCalls = 0;
+            _stats.WinsFromButton = 0;
+            _stats.WinsFromBlinds = 0;
+            _stats.WinsFromOther = 0;
+            _stats.HandsFromButton = 0;
+            _stats.HandsFromBlinds = 0;
+            _stats.HandsFromOther = 0;
+            _stats.LastHandReview = null;
+            _stats.Tips.Clear();
+
+            OnStatsUpdated?.Invoke(_stats);
         }
 
         private void OnHandCompleted(HandSnapshot hand)
