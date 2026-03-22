@@ -22,7 +22,7 @@ namespace HijackPoker.Api
     public class PokerApiClient : MonoBehaviour
     {
         [Header("API Configuration")]
-        [SerializeField] private string baseUrl = "https://hijack-poker.fly.dev";
+        [SerializeField] private string baseUrl = "http://localhost:3030";
         [SerializeField] private float timeoutSeconds = 10f;
 
         /// <summary>

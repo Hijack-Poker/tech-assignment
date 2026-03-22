@@ -133,11 +133,12 @@ async function createNewGame(tableId) {
     const dealerSeat = lastCompleted ? lastCompleted.dealer_seat : 1;
 
     // Insert game record
-    const [gameId] = await sequelize.query(
+    const [insertId] = await sequelize.query(
       `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
        VALUES (:tableId, :gameNo, 0, :dealerSeat, 0, 'in_progress')`,
       { replacements: { tableId, gameNo: nextGameNo, dealerSeat }, type: QueryTypes.INSERT }
     );
+    const gameId = insertId;
 
     // Insert players with carried-over stacks
     for (const p of carryOverPlayers) {
@@ -287,6 +288,7 @@ function normalizeGame(row) {
     winners: typeof row.winners === 'string'
       ? JSON.parse(row.winners || '[]')
       : (row.winners || []),
+    noReopenSeats: [],
   };
 }
 

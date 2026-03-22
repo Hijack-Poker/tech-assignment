@@ -203,7 +203,7 @@ public static class RebuildScene
         potTMP.fontSize = 22; potTMP.fontStyle = FontStyles.Bold;
         potTMP.alignment = TextAlignmentOptions.Center; potTMP.color = GOLD;
         potTMP.enableAutoSizing = false;
-        Rect(potGO, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, 90), new Vector2(300, 36));
+        Rect(potGO, 0.5f, 0.5f, 0.5f, 0.5f, TC + new Vector2(0, 160), new Vector2(300, 36));
 
         // Pot target (invisible anchor for chip fly destination)
         var potTargetGO = UI("PotTarget", cv.transform);
