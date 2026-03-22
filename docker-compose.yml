@@ -175,15 +175,33 @@ services:
       - |
         cat > /tmp/server.js << 'SCRIPT'
         const http = require("http");
+        const BROADCAST_URL = process.env.BROADCAST_URL || "http://cash-game-broadcast:3032/broadcast";
         const server = http.createServer((req, res) => {
           let body = "";
           req.on("data", chunk => body += chunk);
           req.on("end", () => {
             try {
               const event = JSON.parse(body);
-              console.log("[EventBridge Mock] Event received:", JSON.stringify(event, null, 2));
+              console.log("[EventBridge Mock] Event received:", event.Entries?.[0]?.DetailType || "unknown");
               res.writeHead(200, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ FailedEntryCount: 0, Entries: [{ EventId: "mock-" + Date.now() }] }));
+              // Forward TABLE_UPDATE events to broadcast service
+              for (const entry of (event.Entries || [])) {
+                if (entry.DetailType === "TABLE_UPDATE" && entry.Detail) {
+                  const detail = typeof entry.Detail === "string" ? entry.Detail : JSON.stringify(entry.Detail);
+                  const postData = JSON.stringify({ detail: JSON.parse(detail) });
+                  const url = new URL(BROADCAST_URL);
+                  const fwdReq = http.request({
+                    hostname: url.hostname, port: url.port, path: url.pathname,
+                    method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(postData) }
+                  }, (fwdRes) => {
+                    console.log("[EventBridge Mock] Forwarded to broadcast:", fwdRes.statusCode);
+                  });
+                  fwdReq.on("error", (e) => console.error("[EventBridge Mock] Forward error:", e.message));
+                  fwdReq.write(postData);
+                  fwdReq.end();
+                }
+              }
             } catch (e) {
               res.writeHead(400);
               res.end(JSON.stringify({ error: "Invalid JSON" }));
@@ -257,6 +275,8 @@ services:
         condition: service_healthy
     environment:
       STAGE: local
+      PORT: 3032
+      PROCESSOR_URL: http://holdem-processor:3030
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-hijack}
@@ -274,7 +294,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+        npm install && node local-server.js
 
   hand-viewer:
     image: nginx:alpine
