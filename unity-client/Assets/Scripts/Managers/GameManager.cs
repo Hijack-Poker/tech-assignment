@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
+using HijackPoker.Analytics;
 using HijackPoker.Animation;
 using HijackPoker.Api;
 using HijackPoker.Models;
@@ -29,6 +30,8 @@ namespace HijackPoker.Managers
         private AnimationController _animController;
         private ConnectionManager _connectionManager;
         private SessionTracker _sessionTracker;
+        private PlayerProfiler _playerProfiler;
+        private HandNarrator _handNarrator;
         private InputHandler _inputHandler;
         private int _tableId = 1;
         private bool _isProcessing;
@@ -73,6 +76,8 @@ namespace HijackPoker.Managers
         private HandHistoryView _handHistory;
         private CardPreviewOverlay _cardPreview;
         private PlayerStatsTooltip _statsTooltip;
+        private SessionStatsPanel _sessionStatsPanel;
+        private HelpPopupView _helpPopup;
         private LobbyView _lobbyView;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -121,6 +126,8 @@ namespace HijackPoker.Managers
             _stateManager.OnStateChanged += HandleStateChanged;
             _animController = new AnimationController();
             _sessionTracker = new SessionTracker();
+            _playerProfiler = new PlayerProfiler();
+            _handNarrator = new HandNarrator();
             AudioManager.Initialize(gameObject);
 
             // Show lobby first — it provides table selection
@@ -396,12 +403,17 @@ namespace HijackPoker.Managers
             _controls.OnAutoPlayToggle += HandleAutoPlayToggle;
             _controls.OnTableConnect += HandleTableConnect;
             _controls.OnBackToLobby += HandleBackToLobby;
+            _controls.OnHelpRequested += () => _helpPopup?.Show();
 
             // Connection status (overlaid top-left of safe area)
             _connectionStatus = ConnectionStatusView.Create(safeAreaRt);
 
             // Hand history (overlaid right side of safe area)
             _handHistory = HandHistoryView.Create(safeAreaRt);
+
+            // Session stats panel (overlaid left side)
+            _sessionStatsPanel = SessionStatsPanel.Create(safeAreaRt, _animController,
+                _sessionTracker, _playerProfiler);
 
             // Card preview overlay (full-screen, above everything)
             _cardPreview = CardPreviewOverlay.Create(safeAreaRt, _animController);
@@ -410,8 +422,12 @@ namespace HijackPoker.Managers
             _showdownOverlay = ShowdownOverlay.Create(safeAreaRt, _animController, tableTheme);
             _showdownOverlay.OnDismissed += HandleShowdownDismissed;
 
+            // Help popup (full-screen, above showdown)
+            _helpPopup = HelpPopupView.Create(safeAreaRt, _animController);
+
             // Player stats tooltip (singleton, above seats)
-            _statsTooltip = PlayerStatsTooltip.Create(safeAreaRt, _animController, _sessionTracker);
+            _statsTooltip = PlayerStatsTooltip.Create(safeAreaRt, _animController,
+                _sessionTracker, _playerProfiler);
 
             // Loading overlay (above everything, blocks input while loading)
             _loadingOverlay = LoadingOverlay.Create(safeAreaRt, _animController);
@@ -487,7 +503,46 @@ namespace HijackPoker.Managers
 
             // Record hand end for session tracking
             if (isHandTransition && oldState != null)
+            {
                 _sessionTracker?.RecordHandEnd(oldState);
+                _sessionStatsPanel?.UpdateStats();
+            }
+
+            // Record player actions for profiling
+            if (_playerProfiler != null && oldState?.Players != null && newState?.Players != null)
+            {
+                foreach (var np in newState.Players)
+                {
+                    if (np.Seat < 1 || string.IsNullOrEmpty(np.Action)) continue;
+                    // Find previous action for this seat
+                    string prevAction = null;
+                    foreach (var op in oldState.Players)
+                    {
+                        if (op.Seat == np.Seat) { prevAction = op.Action; break; }
+                    }
+                    // Only record if action changed
+                    if (np.Action != prevAction)
+                    {
+                        bool isBlindPost = newStep <= 3; // SETUP_SMALL_BLIND, SETUP_BIG_BLIND
+                        _playerProfiler.RecordAction(np.Seat, np.Action, newStep, isBlindPost);
+                    }
+                }
+            }
+
+            // Record hand results for profiling
+            if (isHandTransition && _playerProfiler != null && oldState?.Players != null)
+            {
+                bool showdownReached = oldStep >= 12;
+                bool flopReached = oldStep >= 6;
+                foreach (var player in oldState.Players)
+                {
+                    if (player.Seat < 1) continue;
+                    bool reachedShowdown = showdownReached && !player.IsFolded;
+                    bool sawFlop = flopReached && !player.IsFolded;
+                    _playerProfiler.RecordHandResult(player.Seat, reachedShowdown,
+                        player.IsWinner, sawFlop);
+                }
+            }
 
             if (isFindWinners)
                 AudioManager.Instance?.Play(SoundType.WinnerFanfare);
@@ -514,6 +569,16 @@ namespace HijackPoker.Managers
 
             // Log to hand history
             _handHistory.LogStateChange(oldState, newState);
+
+            // Generate narration with board texture analysis
+            if (newState?.Game?.CommunityCards != null && newState.Game.CommunityCards.Count > 0)
+            {
+                var boardTexture = BoardTextureAnalyzer.Analyze(newState.Game.CommunityCards);
+                var narration = _handNarrator?.GenerateNarration(
+                    newState, oldState, _playerProfiler, boardTexture);
+                if (!string.IsNullOrEmpty(narration))
+                    _handHistory.LogNarration(narration);
+            }
 
             // Chip fly animation when bets are collected into pot
             if (oldState?.Players != null && newState?.Players != null)
@@ -611,6 +676,10 @@ namespace HijackPoker.Managers
                 // Update session delta
                 if (player != null && _sessionTracker != null)
                     _seats[i].UpdateSessionDelta(_sessionTracker.GetDelta(i));
+
+                // Update profile badge
+                if (player != null && _playerProfiler != null)
+                    _seats[i].UpdateProfileBadge(_playerProfiler.GetProfile(i));
             }
         }
 
@@ -915,6 +984,7 @@ namespace HijackPoker.Managers
                 WasAutoPlaying = _autoPlaying,
                 SpeedIndex = _controls.GetSpeedIndex(),
                 SessionTracker = _sessionTracker,
+                PlayerProfiler = _playerProfiler,
                 HandHistoryEntries = _handHistory.ExportEntries(),
                 LastGameNo = _handHistory.ExportLastGameNo(),
                 StartOfHandStacks = _handHistory.ExportStartStacks(),
@@ -930,6 +1000,7 @@ namespace HijackPoker.Managers
             {
                 _stateManager.SetStateSilently(ctx.LastTableState);
                 _sessionTracker = ctx.SessionTracker;
+                _playerProfiler = ctx.PlayerProfiler ?? new PlayerProfiler();
                 _handHistory.ImportEntries(ctx.HandHistoryEntries, ctx.LastGameNo,
                     ctx.StartOfHandStacks, ctx.PrevPlayerActions);
                 _controls.SetSpeedIndex(ctx.SpeedIndex);
@@ -938,10 +1009,12 @@ namespace HijackPoker.Managers
             {
                 _stateManager.SetStateSilently(null);
                 _sessionTracker = new SessionTracker();
+                _playerProfiler = new PlayerProfiler();
                 _handHistory.Clear();
             }
 
             _statsTooltip?.UpdateTracker(_sessionTracker);
+            _statsTooltip?.UpdateProfiler(_playerProfiler);
         }
 
         private async void HandleTableConnect(int tableId)
@@ -1179,6 +1252,8 @@ namespace HijackPoker.Managers
             _handHistory = null;
             _cardPreview = null;
             _statsTooltip = null;
+            _sessionStatsPanel = null;
+            _helpPopup = null;
             _showdownOverlay = null;
             _showdownPaused = false;
             _loadingOverlay = null;
@@ -1189,6 +1264,7 @@ namespace HijackPoker.Managers
             // Reset state manager
             _stateManager?.SetStateSilently(null);
             _sessionTracker = new SessionTracker();
+            _playerProfiler = new PlayerProfiler();
         }
 
         private void Update()

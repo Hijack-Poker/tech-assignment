@@ -16,6 +16,7 @@ namespace HijackPoker.UI
         public event Action OnAutoPlayToggle;
         public event Action<int> OnTableConnect;
         public event Action OnBackToLobby;
+        public event Action OnHelpRequested;
         private Button _nextStepButton;
         private Button _resetButton;
         private Button _playPauseButton;
@@ -316,6 +317,31 @@ namespace HijackPoker.UI
             colors.pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
             btn.colors = colors;
             btn.onClick.AddListener(() => OnBackToLobby?.Invoke());
+
+            // Help button "?" — positioned right of lobby pill
+            var helpGo = new GameObject("HelpBtn", typeof(RectTransform));
+            helpGo.transform.SetParent(safeArea, false);
+            var helpRt = helpGo.GetComponent<RectTransform>();
+            helpRt.anchorMin = new Vector2(0f, 1f);
+            helpRt.anchorMax = new Vector2(0f, 1f);
+            helpRt.pivot = new Vector2(0f, 1f);
+            helpRt.anchoredPosition = new Vector2(100f, -42f);
+            helpRt.sizeDelta = new Vector2(pillH, pillH);
+
+            var helpBg = helpGo.AddComponent<Image>();
+            helpBg.sprite = TextureGenerator.GetCircle(64);
+            helpBg.color = new Color(0f, 0f, 0f, 0.35f);
+            helpBg.raycastTarget = true;
+
+            var helpLabel = UIFactory.CreateText("HelpLabel", helpGo.transform,
+                "?", 14f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+            UIFactory.StretchFill(helpLabel.GetComponent<RectTransform>());
+            helpLabel.raycastTarget = false;
+
+            var helpBtn = helpGo.AddComponent<Button>();
+            helpBtn.targetGraphic = helpBg;
+            helpBtn.colors = colors;
+            helpBtn.onClick.AddListener(() => OnHelpRequested?.Invoke());
         }
 
         private void BuildPhaseIndicator(RectTransform barParent)

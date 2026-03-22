@@ -472,6 +472,12 @@ namespace HijackPoker.UI
                 _startOfHandStacks[p.PlayerId] = p.Stack;
         }
 
+        public void LogNarration(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            AddEntry($"<i>\u25b8 {text}</i>", new Color(0.40f, 0.75f, 0.95f, 1f));
+        }
+
         private void AddEntry(string text, Color color)
         {
             var tmp = UIFactory.CreateText("Entry", _content, text,

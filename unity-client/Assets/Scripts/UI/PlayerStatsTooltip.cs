@@ -1,14 +1,17 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using HijackPoker.Analytics;
 using HijackPoker.Animation;
 using HijackPoker.Managers;
+using HijackPoker.Models;
 
 namespace HijackPoker.UI
 {
     /// <summary>
-    /// Small dark rounded-rect popup showing player session stats.
-    /// Singleton — only one visible at a time. Auto-dismisses after 3s.
+    /// Small dark rounded-rect popup showing player session stats, profile, and strategy hints.
+    /// Singleton — only one visible at a time. Auto-dismisses after 4s.
     /// </summary>
     public class PlayerStatsTooltip : MonoBehaviour
     {
@@ -17,26 +20,28 @@ namespace HijackPoker.UI
         private TextMeshProUGUI _statsText;
         private AnimationController _animController;
         private SessionTracker _sessionTracker;
+        private PlayerProfiler _playerProfiler;
         private TweenHandle _showTween;
         private TweenHandle _dismissTween;
         private float _showTime;
         private bool _isVisible;
 
-        private const float AutoDismissSeconds = 3f;
+        private const float AutoDismissSeconds = 4f;
 
         public static PlayerStatsTooltip Create(Transform parent, AnimationController anim,
-            SessionTracker tracker)
+            SessionTracker tracker, PlayerProfiler profiler = null)
         {
             var go = new GameObject("PlayerStatsTooltip", typeof(RectTransform));
             go.transform.SetParent(parent, false);
 
             var rt = go.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(160, 80);
+            rt.sizeDelta = new Vector2(180, 120);
 
             var view = go.AddComponent<PlayerStatsTooltip>();
             view._rt = rt;
             view._animController = anim;
             view._sessionTracker = tracker;
+            view._playerProfiler = profiler;
             view._canvasGroup = go.AddComponent<CanvasGroup>();
             view.BuildUI();
             view.Hide(false);
@@ -48,7 +53,7 @@ namespace HijackPoker.UI
             // Dark rounded background
             var bg = UIFactory.CreateImage("TooltipBg", transform,
                 new Color(0.08f, 0.10f, 0.16f, 0.92f));
-            bg.sprite = TextureGenerator.GetRoundedRect(160, 80, 10);
+            bg.sprite = TextureGenerator.GetRoundedRect(180, 120, 10);
             bg.type = Image.Type.Sliced;
             var bgRt = bg.GetComponent<RectTransform>();
             UIFactory.StretchFill(bgRt);
@@ -62,13 +67,18 @@ namespace HijackPoker.UI
             textRt.offsetMin = new Vector2(10, 6);
             textRt.offsetMax = new Vector2(-10, -6);
             _statsText.enableAutoSizing = true;
-            _statsText.fontSizeMin = 8f;
+            _statsText.fontSizeMin = 7f;
             _statsText.fontSizeMax = 11f;
         }
 
         public void UpdateTracker(SessionTracker tracker)
         {
             _sessionTracker = tracker;
+        }
+
+        public void UpdateProfiler(PlayerProfiler profiler)
+        {
+            _playerProfiler = profiler;
         }
 
         public void ShowForSeat(int seat, Vector2 position)
@@ -90,7 +100,7 @@ namespace HijackPoker.UI
             _rt.anchorMax = new Vector2(0.5f, 0.5f);
             _rt.anchoredPosition = position + new Vector2(0, 60);
 
-            // Format stats
+            // Format session stats
             float delta = _sessionTracker.GetDelta(seat);
             float winPct = session.HandsPlayed > 0
                 ? (float)session.HandsWon / session.HandsPlayed * 100f
@@ -99,10 +109,31 @@ namespace HijackPoker.UI
                 ? $"<color=#10B981>+${delta:F0}</color>"
                 : $"<color=#EF4444>-${-delta:F0}</color>";
 
-            _statsText.text = $"Hands: {session.HandsPlayed}\n" +
-                              $"Won: {winPct:F0}%\n" +
-                              $"Biggest: ${session.BiggestPot:F0}\n" +
-                              $"P/L: {deltaStr}";
+            var lines = new List<string>
+            {
+                $"Hands: {session.HandsPlayed}  Won: {winPct:F0}%",
+                $"Biggest: ${session.BiggestPot:F0}  P/L: {deltaStr}"
+            };
+
+            // Add profile stats if available
+            var profile = _playerProfiler?.GetProfile(seat);
+            if (profile != null && profile.HandsTracked >= 3)
+            {
+                float vpip = (float)profile.VoluntaryPutInPot / profile.HandsTracked * 100f;
+                float pfr = (float)profile.PreFlopRaise / profile.HandsTracked * 100f;
+                string styleLabel = PlayStyleHelper.GetLabel(profile.Style);
+                Color styleColor = PlayStyleHelper.GetColor(profile.Style);
+                string hex = ColorUtility.ToHtmlStringRGB(styleColor);
+
+                lines.Add($"<color=#{hex}>{styleLabel}</color> VPIP:{vpip:F0}% PFR:{pfr:F0}%");
+
+                // Strategy hint
+                var advice = StrategyAdvisor.GetAdvice(null, _playerProfiler, seat);
+                if (advice.Count > 0)
+                    lines.Add($"<color=#94A3B8><size=9>{advice[0]}</size></color>");
+            }
+
+            _statsText.text = string.Join("\n", lines);
 
             // Animated entrance
             _canvasGroup.alpha = 0f;

@@ -432,3 +432,121 @@ No client-to-server messages are required — the WebSocket is receive-only.
 - **No card art** — cards display rank and suit as text
 - **Single AudioSource** — overlapping SFX during rapid auto-play may blend
 - **No persistence** — settings reset each session
+
+## API Endpoints
+
+The Unity client communicates with the `holdem-processor` backend via REST and WebSocket.
+
+### `GET /health`
+
+Health check endpoint. Returns 200 when the service is ready.
+
+```json
+{
+  "service": "holdem-processor",
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### `POST /process`
+
+Advances the game by one state machine step.
+
+**Request body:**
+```json
+{ "tableId": 1 }
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "result": {
+    "status": "ok",
+    "tableId": 1,
+    "step": 5,
+    "stepName": "PRE_FLOP_BETTING"
+  }
+}
+```
+
+### `GET /table/{tableId}`
+
+Returns the full table state including game metadata and all player data.
+
+**Response:**
+```json
+{
+  "game": {
+    "id": 1,
+    "tableId": 1,
+    "tableName": "Table 1",
+    "gameNo": 42,
+    "handStep": 7,
+    "stepName": "FLOP_BETTING",
+    "communityCards": ["JH", "7D", "2C"],
+    "pot": 24.0,
+    "status": "in_progress",
+    "smallBlind": 1.0,
+    "bigBlind": 2.0,
+    "maxSeats": 6,
+    "winners": []
+  },
+  "players": [
+    {
+      "playerId": 101,
+      "username": "Alice",
+      "seat": 1,
+      "stack": 96.0,
+      "bet": 4.0,
+      "status": "1",
+      "action": "raise",
+      "cards": ["AH", "KD"],
+      "handRank": "",
+      "winnings": 0
+    }
+  ]
+}
+```
+
+### WebSocket: `ws://host:3032`
+
+Subscribes to real-time state updates for a table. The WebSocket broadcasts `TableResponse` JSON (same schema as `GET /table/{tableId}`) whenever the game state changes. The connection is receive-only — no client-to-server messages are required.
+
+## Implemented vs. Deferred
+
+### Implemented
+
+- Real-time hand viewer with full 16-step state machine playback
+- Interactive betting with animated card dealing, pot distribution, and winner presentation
+- Lobby with 4 themed table previews, live polling, and entrance animations
+- Showdown overlay with hand rankings, winner highlighting, and sparkle effects
+- Hand history log with step-by-step action recording and stack changes
+- Player profiling and analytics (PlayStyle classification, VPIP/PFR/AF stats)
+- Board texture analysis (wetness, connectivity, high-card presence)
+- Hand narration with context-aware commentary
+- Session statistics tracking (hands seen, win rate, biggest pot)
+- Procedural UI — all layout in code, no scene files, merge-conflict-free
+- Procedural audio — runtime-generated SFX with zero external dependencies
+- Procedural player avatars with deterministic pattern generation
+- WebSocket + REST dual transport with automatic failover
+- WebGL, macOS, and iOS build support
+- Comprehensive unit tests (22 EditMode test files) and Playwright E2E tests
+
+### Deferred (with rationale)
+
+- **Server-side AI engine** — Client-side analytics (PlayerProfiler, BoardTextureAnalyzer, StrategyAdvisor) were preferred for simplicity. All analysis runs locally without any backend changes, making it easy to iterate and extend without deploying new server code.
+- **Persistent player accounts** — Would require authentication infrastructure (OAuth/JWT), a user database, and session management. For a viewer-focused client, per-session state via SessionTracker is sufficient and avoids the complexity.
+- **Hand replayer** — Requires a hand history database with full action logs per street. The current step-by-step HandHistoryView covers the active hand; full replay across past hands would need a persistence layer that doesn't exist yet.
+- **Tournament mode** — Cash game mechanics (fixed blinds, continuous buy-in) were prioritized as the foundational game type. Tournament support (blind levels, bubble logic, payout structures) is a significant scope addition best tackled after the cash game viewer is solid.
+
+## Trade-offs
+
+1. **Programmatic UI over scene files:** Gained merge-conflict-free development and full code-level control over every color, size, and position. Lost the ability to preview and iterate on layouts in Unity's visual editor — every adjustment requires a Play Mode cycle.
+
+2. **Client-side analytics instead of server-side:** PlayerProfiler, BoardTextureAnalyzer, and StrategyAdvisor all run in the Unity client, meaning zero backend changes were needed to add rich analysis features. The trade-off is that all stats reset per session since there is no server-side persistence — returning to a table starts fresh.
+
+3. **Custom Tweener and Timeline system instead of DOTween or third-party libs:** Eliminated external dependencies and licensing concerns, and the API was tailored exactly to the project's needs (cancel-snap pattern, fluent Timeline sequencing). The cost was upfront development time building and testing the animation primitives from scratch.
+
+4. **WebSocket-primary with REST fallback instead of REST-only:** Delivers sub-100ms state updates for a responsive real-time feel. The added complexity is managing two transport paths, connection state transitions, and a 3-second WS-to-REST fallback timeout after each `POST /process` call.

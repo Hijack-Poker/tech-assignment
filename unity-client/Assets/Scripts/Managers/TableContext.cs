@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using HijackPoker.Analytics;
 using HijackPoker.Models;
 
 namespace HijackPoker.Managers
@@ -13,6 +14,7 @@ namespace HijackPoker.Managers
         public bool WasAutoPlaying;
         public int SpeedIndex;
         public SessionTracker SessionTracker;
+        public PlayerProfiler PlayerProfiler;
         public List<HandHistoryEntry> HandHistoryEntries = new();
         public int LastGameNo = -1;
         public Dictionary<int, float> StartOfHandStacks = new();

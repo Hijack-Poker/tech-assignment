@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
+using HijackPoker.Analytics;
 using HijackPoker.Animation;
 using HijackPoker.Managers;
 using HijackPoker.Models;
@@ -68,11 +69,14 @@ namespace HijackPoker.UI
         private TweenHandle _foldTiltHandle;
         private TweenHandle _foldFadeHandle;
 
-        // Chip stack, turn timer, session delta
+        // Chip stack, turn timer, session delta, profile badge
         private ChipStackView _chipStack;
         private TurnTimerView _turnTimer;
         private TextMeshProUGUI _sessionDeltaText;
         private GameObject _sessionDeltaRow;
+        private GameObject _profileBadge;
+        private TextMeshProUGUI _profileBadgeText;
+        private Image _profileBadgeBg;
 
         public int SeatNumber => _seatNumber;
         public RectTransform RectTransform => _rt;
@@ -260,6 +264,28 @@ namespace HijackPoker.UI
             _sessionDeltaText.fontSizeMin = 9f;
             _sessionDeltaText.fontSizeMax = LayoutConfig.SessionDeltaFontSize;
             _sessionDeltaRow.SetActive(false);
+
+            // ── Profile badge row (play style + VPIP%) ───────────────────────
+            _profileBadge = new GameObject("ProfileBadge", typeof(RectTransform));
+            _profileBadge.transform.SetParent(columnGo.transform, false);
+            var profileLE = _profileBadge.AddComponent<LayoutElement>();
+            profileLE.preferredWidth = infoSz.x;
+            profileLE.preferredHeight = LayoutConfig.SessionDeltaRowHeight;
+
+            _profileBadgeBg = _profileBadge.AddComponent<Image>();
+            _profileBadgeBg.sprite = TextureGenerator.GetRoundedRect(64, 64, (int)cornerRadius);
+            _profileBadgeBg.type = Image.Type.Sliced;
+            _profileBadgeBg.color = new Color(0.20f, 0.60f, 0.86f, 0.70f);
+
+            _profileBadgeText = UIFactory.CreateText("ProfileText", _profileBadge.transform, "",
+                LayoutConfig.SessionDeltaFontSize, Color.white,
+                TextAlignmentOptions.Center, FontStyles.Bold);
+            var profileTextRt = _profileBadgeText.GetComponent<RectTransform>();
+            UIFactory.StretchFill(profileTextRt);
+            _profileBadgeText.enableAutoSizing = true;
+            _profileBadgeText.fontSizeMin = 8f;
+            _profileBadgeText.fontSizeMax = LayoutConfig.SessionDeltaFontSize;
+            _profileBadge.SetActive(false);
 
             // ── Section 3: Cards (fanned layout) ─────────────────────────────
             float fanAngle = LayoutConfig.SeatCardFanAngle;
@@ -872,6 +898,27 @@ namespace HijackPoker.UI
             }
         }
 
+        public void UpdateProfileBadge(PlayerProfiler.PlayerProfile profile)
+        {
+            if (_profileBadge == null) return;
+
+            if (profile == null || profile.HandsTracked < 3 || profile.Style == PlayStyle.Unknown)
+            {
+                _profileBadge.SetActive(false);
+                return;
+            }
+
+            _profileBadge.SetActive(true);
+            float vpip = profile.HandsTracked > 0
+                ? (float)profile.VoluntaryPutInPot / profile.HandsTracked * 100f
+                : 0f;
+            string label = PlayStyleHelper.GetLabel(profile.Style);
+            _profileBadgeText.text = $"{label} {vpip:F0}%";
+
+            Color styleColor = PlayStyleHelper.GetColor(profile.Style);
+            _profileBadgeBg.color = new Color(styleColor.r, styleColor.g, styleColor.b, 0.70f);
+        }
+
         public void UpdateSessionDelta(float delta)
         {
             if (Mathf.Abs(delta) < 0.01f)
@@ -957,6 +1004,7 @@ namespace HijackPoker.UI
             _chipStack?.Clear();
             _turnTimer?.StopTimer();
             _sessionDeltaRow?.SetActive(false);
+            _profileBadge?.SetActive(false);
         }
     }
 }
