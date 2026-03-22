@@ -415,6 +415,10 @@ namespace HijackPoker.Managers
             _sessionStatsPanel = SessionStatsPanel.Create(safeAreaRt, _animController,
                 _sessionTracker, _playerProfiler);
 
+            // Mutual exclusion: opening one panel closes the other
+            _handHistory.OnPanelToggled += (open) => { if (open) _sessionStatsPanel.CollapsePanel(); };
+            _sessionStatsPanel.OnPanelToggled += (open) => { if (open) _handHistory.CollapsePanel(); };
+
             // Card preview overlay (full-screen, above everything)
             _cardPreview = CardPreviewOverlay.Create(safeAreaRt, _animController);
 
@@ -441,6 +445,7 @@ namespace HijackPoker.Managers
                 _inputHandler.OnAutoPlayToggle += HandleAutoPlayToggle;
                 _inputHandler.OnSpeedCycle += () => _controls.CycleSpeed();
                 _inputHandler.OnHandHistoryToggle += () => _handHistory.TogglePanel();
+                _inputHandler.OnMuteToggle += () => AudioManager.Instance?.ToggleMute();
             }
         }
 
@@ -498,7 +503,7 @@ namespace HijackPoker.Managers
             bool isHandTransition = oldState != null && newGameNo > 0 && oldGameNo != newGameNo;
             bool isDealCards = oldState != null && oldStep < 4 && newStep >= 4
                 && !isHandTransition;
-            bool isFindWinners = oldState != null && oldStep < 14 && newStep >= 14;
+            bool isFindWinners = oldState != null && oldStep < 13 && newStep >= 13;
             bool isPayWinners = oldState != null && oldStep < 15 && newStep >= 15;
 
             // Record hand end for session tracking
@@ -634,7 +639,7 @@ namespace HijackPoker.Managers
             {
                 if (_autoPlaying)
                 {
-                    float delay = _controls.CurrentSpeed * 3f;
+                    float delay = Mathf.Max(2.5f, _controls.CurrentSpeed * 3f);
                     _showdownOverlay.ShowAutoMode(newState, delay);
                 }
                 else
@@ -964,6 +969,7 @@ namespace HijackPoker.Managers
                         // Self-remove (can't call StopBackgroundAutoPlay from inside coroutine cleanly)
                         if (bg.ApiClient != null) Destroy(bg.ApiClient);
                         _backgroundAutoPlays.Remove(bg.TableId);
+                        _lobbyView?.SetAutoPlayIndicator(bg.TableId, false);
                         yield break;
                     }
                     yield return new WaitForSeconds(2f);
@@ -1327,6 +1333,7 @@ namespace HijackPoker.Managers
         private void HandleShowdownDismissed()
         {
             _showdownPaused = false;
+            _ = ProcessStep();
         }
 
         // ── Table Reset ──────────────────────────────────────────────

@@ -200,7 +200,7 @@ namespace HijackPoker.UI
             string result = "";
             for (int i = 0; i < game.SidePots.Count; i++)
             {
-                result += $"\nSP{i + 1}: {MoneyFormatter.Format(game.SidePots[i].Amount)}";
+                result += $" + SP{i + 1}: {MoneyFormatter.Format(game.SidePots[i].Amount)}";
             }
             return result;
         }

@@ -9,6 +9,8 @@ namespace HijackPoker.UI
 {
     public class SessionStatsPanel : MonoBehaviour
     {
+        public event System.Action<bool> OnPanelToggled;
+
         private RectTransform _panelRt;
         private GameObject _panelBody;
         private Image _toggleBg;
@@ -215,6 +217,16 @@ namespace HijackPoker.UI
                 _iconImage.color = UIFactory.AccentGold;
                 _toggleBg.color = new Color(0.13f, 0.13f, 0.16f, 0.92f);
             }
+            OnPanelToggled?.Invoke(_isExpanded);
+        }
+
+        public void CollapsePanel()
+        {
+            if (!_isExpanded) return;
+            _isExpanded = false;
+            _panelBody.SetActive(false);
+            _iconImage.color = UIFactory.AccentGold;
+            _toggleBg.color = new Color(0.13f, 0.13f, 0.16f, 0.92f);
         }
 
         public void UpdateTrackers(SessionTracker tracker, PlayerProfiler profiler)
@@ -234,12 +246,14 @@ namespace HijackPoker.UI
             int vpipSeats = 0;
             float vpipSum = 0f;
             float pfrSum = 0f;
+            int activeSeats = 0;
 
             for (int seat = 1; seat <= LayoutConfig.MaxSeats; seat++)
             {
                 var session = _sessionTracker?.GetSession(seat);
                 if (session == null || session.HandsPlayed == 0) continue;
 
+                activeSeats++;
                 totalHands = Mathf.Max(totalHands, session.HandsPlayed);
                 totalWon += session.HandsWon;
                 if (session.BiggestPot > biggestWin)
@@ -255,8 +269,8 @@ namespace HijackPoker.UI
             }
 
             _handsPlayedText.text = totalHands.ToString();
-            _winRateText.text = totalHands > 0
-                ? $"{(float)totalWon / totalHands * 100f / LayoutConfig.MaxSeats:F0}%"
+            _winRateText.text = totalHands > 0 && activeSeats > 0
+                ? $"{(float)totalWon / totalHands * 100f / activeSeats:F0}%"
                 : "0%";
             _vpipText.text = vpipSeats > 0 ? $"{vpipSum / vpipSeats:F0}%" : "--";
             _pfrText.text = vpipSeats > 0 ? $"{pfrSum / vpipSeats:F0}%" : "--";

@@ -16,6 +16,7 @@ namespace HijackPoker.UI
         public event Action OnAutoPlayToggle;
         public event Action OnSpeedCycle;
         public event Action OnHandHistoryToggle;
+        public event Action OnMuteToggle;
 
 #if UNITY_STANDALONE || UNITY_WEBGL || UNITY_EDITOR
         private void Update()
@@ -35,6 +36,8 @@ namespace HijackPoker.UI
                 OnSpeedCycle?.Invoke();
             else if (Input.GetKeyDown(KeyCode.H))
                 OnHandHistoryToggle?.Invoke();
+            else if (Input.GetKeyDown(KeyCode.M))
+                OnMuteToggle?.Invoke();
         }
 #endif
     }

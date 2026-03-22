@@ -100,6 +100,21 @@ namespace HijackPoker.UI
             _rt.anchorMax = new Vector2(0.5f, 0.5f);
             _rt.anchoredPosition = position + new Vector2(0, 60);
 
+            // Clamp to screen bounds
+            var canvas = _rt.parent as RectTransform;
+            if (canvas != null)
+            {
+                float halfW = _rt.sizeDelta.x / 2f;
+                float halfH = _rt.sizeDelta.y / 2f;
+                float margin = 10f;
+                float maxX = canvas.rect.width / 2f - halfW - margin;
+                float maxY = canvas.rect.height / 2f - halfH - margin;
+                var pos = _rt.anchoredPosition;
+                pos.x = Mathf.Clamp(pos.x, -maxX, maxX);
+                pos.y = Mathf.Clamp(pos.y, -maxY, maxY);
+                _rt.anchoredPosition = pos;
+            }
+
             // Format session stats
             float delta = _sessionTracker.GetDelta(seat);
             float winPct = session.HandsPlayed > 0

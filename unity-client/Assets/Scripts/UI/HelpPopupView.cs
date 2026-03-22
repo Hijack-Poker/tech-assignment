@@ -218,7 +218,7 @@ namespace HijackPoker.UI
             {
                 "Space",    "Next Step \u2014 advance the hand by one step",
                 "A",        "Auto-Play \u2014 toggle automatic hand progression",
-                "S",        "Speed \u2014 cycle auto-play speed (1x\u20135x)",
+                "S",        "Speed \u2014 cycle auto-play speed (0.25x\u20132x)",
                 "H",        "Hand History \u2014 toggle the step-by-step log panel",
                 "R",        "Reset \u2014 restart the current hand",
                 "M",        "Mute \u2014 toggle all procedural audio"

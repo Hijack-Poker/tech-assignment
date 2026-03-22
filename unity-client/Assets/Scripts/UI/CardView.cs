@@ -382,7 +382,10 @@ namespace HijackPoker.UI
         public void OnPointerClick(PointerEventData eventData)
         {
             if (_currentState == State.FaceUp && !string.IsNullOrEmpty(_cardString))
+            {
+                eventData.Use();
                 OnCardClicked?.Invoke(_cardString);
+            }
         }
 
         // ── Helpers ──────────────────────────────────────────────────

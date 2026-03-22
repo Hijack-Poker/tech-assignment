@@ -144,21 +144,89 @@ namespace HijackPoker.Animation
         }
 
         /// <summary>
-        /// Glint sweep — pruned as part of effect reduction. No-op to preserve caller compatibility.
+        /// Glint sweep — a horizontal light sweep across a card surface.
+        /// A narrow white bar slides left-to-right across the target, fading as it goes.
         /// </summary>
         public static void SpawnGlintSweep(RectTransform target, Color color,
             float duration, AnimationController anim)
         {
-            // Pruned: glint sweep removed for cleaner visual language
+            if (target == null || anim == null) return;
+
+            var go = new GameObject("GlintSweep", typeof(RectTransform));
+            go.transform.SetParent(target, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(12f, 0f);
+            rt.anchoredPosition = new Vector2(-target.rect.width * 0.5f, 0f);
+
+            var img = go.AddComponent<Image>();
+            img.color = new Color(color.r, color.g, color.b, 0.6f);
+            img.raycastTarget = false;
+
+            var cg = go.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+
+            float startX = -target.rect.width * 0.5f;
+            float endX = target.rect.width * 0.5f;
+
+            // Fade in quickly, sweep across, fade out
+            anim.Play(Tweener.TweenFloat(0f, 1f, duration * 0.15f,
+                a => { if (cg != null) cg.alpha = a; }));
+            var sweep = anim.Play(Tweener.TweenFloat(startX, endX, duration,
+                x => { if (rt != null) rt.anchoredPosition = new Vector2(x, 0f); }));
+            var fadeOut = anim.Play(Tweener.TweenFloat(1f, 0f, duration * 0.3f,
+                a => { if (cg != null) cg.alpha = a; }));
+            fadeOut.OnComplete(() => { if (go != null) Object.Destroy(go); });
+            sweep.SnapToFinal = () => { if (go != null) Object.Destroy(go); };
         }
 
         /// <summary>
-        /// Starburst — pruned as part of effect reduction. No-op to preserve caller compatibility.
+        /// Starburst — radial lines burst outward from a point, scaling up and fading.
+        /// Used for high-tier card reveals (full house+).
         /// </summary>
         public static void SpawnStarburst(Transform canvas, Vector2 position, Color color,
             float duration, AnimationController anim)
         {
-            // Pruned: starburst removed for cleaner visual language
+            if (canvas == null || anim == null) return;
+
+            int rayCount = 8;
+            float rayLength = 40f;
+            float rayWidth = 3f;
+
+            for (int i = 0; i < rayCount; i++)
+            {
+                float angle = (360f / rayCount) * i;
+
+                var go = new GameObject("StarburstRay", typeof(RectTransform));
+                go.transform.SetParent(canvas, false);
+                var rt = go.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0f);
+                rt.sizeDelta = new Vector2(rayWidth, rayLength);
+                rt.anchoredPosition = position;
+                rt.localRotation = Quaternion.Euler(0, 0, angle);
+                rt.localScale = Vector3.one * 0.2f;
+
+                var img = go.AddComponent<Image>();
+                img.color = color;
+                img.raycastTarget = false;
+
+                var cg = go.AddComponent<CanvasGroup>();
+                cg.alpha = 0f;
+
+                // Scale up and fade
+                anim.Play(Tweener.TweenFloat(0f, 1f, duration * 0.2f,
+                    a => { if (cg != null) cg.alpha = a; }));
+                anim.Play(Tweener.TweenScale(go.transform,
+                    Vector3.one * 0.2f, Vector3.one * 1.5f,
+                    duration * 0.5f, EaseType.EaseOutQuart));
+                var fadeOut = anim.Play(Tweener.TweenFloat(1f, 0f, duration * 0.6f,
+                    a => { if (cg != null) cg.alpha = a; }));
+                fadeOut.OnComplete(() => { if (go != null) Object.Destroy(go); });
+            }
         }
 
         /// <summary>

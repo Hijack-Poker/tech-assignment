@@ -15,6 +15,8 @@ namespace HijackPoker.UI
     /// </summary>
     public class HandHistoryView : MonoBehaviour
     {
+        public event System.Action<bool> OnPanelToggled;
+
         private const int MaxEntries = 200;
 
         private RectTransform _content;
@@ -156,6 +158,17 @@ namespace HijackPoker.UI
                 _iconImage.color = UIFactory.AccentCyan;
                 _toggleBg.color = new Color(0.13f, 0.13f, 0.16f, 0.92f);
             }
+            OnPanelToggled?.Invoke(_isExpanded);
+        }
+
+        public void CollapsePanel()
+        {
+            if (!_isExpanded) return;
+            _isExpanded = false;
+            _panelBody.SetActive(false);
+            _iconImage.sprite = TextureGenerator.GetListIcon(32);
+            _iconImage.color = UIFactory.AccentCyan;
+            _toggleBg.color = new Color(0.13f, 0.13f, 0.16f, 0.92f);
         }
 
         private void BuildUI(Transform panelTransform)
