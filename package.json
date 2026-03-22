@@ -4,7 +4,6 @@
   "private": true,
   "description": "Hijack Poker Technical Assignment - Serverless Infrastructure",
   "scripts": {
-    "test": "cd serverless-v2/shared && npm install --silent && cd ../services/holdem-processor && npm install --silent && npm test",
     "start:rewards": "docker compose --profile rewards up",
     "start:engine": "docker compose --profile engine up",
     "start:streaks": "docker compose --profile streaks up",
