@@ -12,7 +12,7 @@ async function fetchTable(tableId) {
   try {
     // Get the active game for this table
     const [game] = await sequelize.query(
-      `SELECT g.*, gt.small_blind, gt.big_blind, gt.max_seats, gt.name as table_name
+      `SELECT g.*, gt.small_blind, gt.big_blind, gt.max_seats, gt.name as table_name, gt.game_type
        FROM games g
        JOIN game_tables gt ON g.table_id = gt.id
        WHERE g.table_id = :tableId AND g.status = 'in_progress'
@@ -68,18 +68,21 @@ async function createNewGame(tableId) {
 
     if (allPlayers.length < 2) return null;
 
-    // Get next game number
+    // Get next game number and carry over the dealer seat from the last game
     const [lastGame] = await sequelize.query(
-      `SELECT COALESCE(MAX(game_no), 0) + 1 as next_no FROM games WHERE table_id = :tableId`,
+      `SELECT COALESCE(MAX(game_no), 0) + 1 as next_no,
+              (SELECT dealer_seat FROM games WHERE table_id = :tableId ORDER BY game_no DESC LIMIT 1) as last_dealer
+       FROM games WHERE table_id = :tableId`,
       { replacements: { tableId }, type: QueryTypes.SELECT }
     );
     const nextGameNo = lastGame?.next_no || 1;
+    const lastDealerSeat = parseInt(lastGame?.last_dealer, 10) || 0;
 
-    // Insert game record
+    // Insert game record — use previous dealer seat so setupDealer rotates correctly
     const [gameId] = await sequelize.query(
       `INSERT INTO games (table_id, game_no, hand_step, dealer_seat, pot, status)
-       VALUES (:tableId, :gameNo, 0, 1, 0, 'in_progress')`,
-      { replacements: { tableId, gameNo: nextGameNo }, type: QueryTypes.INSERT }
+       VALUES (:tableId, :gameNo, 0, :dealerSeat, 0, 'in_progress')`,
+      { replacements: { tableId, gameNo: nextGameNo, dealerSeat: lastDealerSeat }, type: QueryTypes.INSERT }
     );
 
     // Insert game players
@@ -125,6 +128,7 @@ async function saveGame(game) {
         deck = :deck,
         current_bet = :currentBet,
         winners = :winners,
+        low_winners = :lowWinners,
         pot = :pot,
         side_pots = :sidePots,
         move = :move,
@@ -141,6 +145,7 @@ async function saveGame(game) {
           deck: JSON.stringify(game.deck || []),
           currentBet: game.currentBet || 0,
           winners: JSON.stringify(game.winners || []),
+          lowWinners: JSON.stringify(game.lowWinners || []),
           pot: game.pot,
           sidePots: JSON.stringify(game.sidePots || []),
           move: game.move || 0,
@@ -170,6 +175,7 @@ async function savePlayers(players) {
           action = :action,
           cards = :cards,
           hand_rank = :handRank,
+          low_hand_rank = :lowHandRank,
           winnings = :winnings
          WHERE id = :id`,
         {
@@ -182,6 +188,7 @@ async function savePlayers(players) {
             action: player.action,
             cards: JSON.stringify(player.cards || []),
             handRank: player.handRank || '',
+            lowHandRank: player.lowHandRank || '',
             winnings: player.winnings || 0,
           },
           type: QueryTypes.UPDATE,
@@ -201,6 +208,7 @@ function normalizeGame(row) {
     id: row.id,
     tableId: row.table_id,
     tableName: row.table_name,
+    gameType: row.game_type || 'texas',
     gameNo: row.game_no,
     handStep: row.hand_step,
     dealerSeat: row.dealer_seat,
@@ -225,6 +233,9 @@ function normalizeGame(row) {
     winners: typeof row.winners === 'string'
       ? JSON.parse(row.winners || '[]')
       : (row.winners || []),
+    lowWinners: typeof row.low_winners === 'string'
+      ? JSON.parse(row.low_winners || '[]')
+      : (row.low_winners || []),
   };
 }
 
@@ -246,6 +257,7 @@ function normalizePlayer(row) {
       ? JSON.parse(row.cards || '[]')
       : (row.cards || []),
     handRank: row.hand_rank || '',
+    lowHandRank: row.low_hand_rank || '',
     winnings: parseFloat(row.winnings) || 0,
   };
 }

@@ -38,11 +38,12 @@ function deal(deck, count) {
 }
 
 /**
- * Convert our card format ("AH") to pokersolver format ("Ah").
+ * Convert our card format ("AH", "10D") to pokersolver format ("Ah", "Td").
  */
 function toPokersolver(card) {
   const suit = card.slice(-1).toLowerCase();
-  const rank = card.slice(0, -1);
+  let rank = card.slice(0, -1);
+  if (rank === '10') rank = 'T';
   return rank + suit;
 }
 

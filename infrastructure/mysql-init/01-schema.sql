@@ -49,6 +49,7 @@ CREATE TABLE games (
   deck JSON COMMENT 'Remaining cards in shuffled deck',
   current_bet DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Current bet to match',
   winners JSON COMMENT '[{"seat":1,"playerId":3}]',
+  low_winners JSON COMMENT 'Omaha Hi-Lo low winners: [{"seat":2,"playerId":4}]',
   move INT DEFAULT 0 COMMENT 'Seat whose turn it is',
   status ENUM('in_progress', 'completed', 'cancelled') DEFAULT 'in_progress',
   started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -72,6 +73,7 @@ CREATE TABLE game_players (
   action VARCHAR(10) DEFAULT '' COMMENT 'Last action (call/check/bet/raise/fold/allin)',
   cards JSON COMMENT '["AH","KD"]',
   hand_rank VARCHAR(50) DEFAULT '' COMMENT 'Best hand description',
+  low_hand_rank VARCHAR(50) DEFAULT '' COMMENT 'Best low hand description (Omaha Hi-Lo)',
   winnings DECIMAL(10,2) DEFAULT 0.00,
   FOREIGN KEY (game_id) REFERENCES games(id),
   FOREIGN KEY (player_id) REFERENCES players(id),
@@ -124,4 +126,5 @@ INSERT INTO players (guid, username, email, balance) VALUES
 -- Sample table
 INSERT INTO game_tables (name, table_type, game_type, max_seats, small_blind, big_blind, min_buy_in, max_buy_in) VALUES
   ('Starter Table', 's', 'texas', 6, 1.00, 2.00, 40.00, 200.00),
-  ('High Stakes', 's', 'texas', 9, 5.00, 10.00, 200.00, 1000.00);
+  ('High Stakes', 's', 'texas', 9, 5.00, 10.00, 200.00, 1000.00),
+  ('Omaha Hi-Lo Table', 's', 'omaha_hilo', 6, 1.00, 2.00, 40.00, 200.00);

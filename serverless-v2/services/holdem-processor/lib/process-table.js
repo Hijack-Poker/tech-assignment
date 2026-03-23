@@ -1,11 +1,12 @@
 'use strict';
 
-const { GAME_HAND, PLAYER_STATUS, ACTION } = require('../shared/games/common/constants');
+const { GAME_HAND, PLAYER_STATUS, ACTION, GAME } = require('../shared/games/common/constants');
 const { createDeck, shuffle, deal, findWinners } = require('../shared/games/common/cards');
 const { collectBets, isBettingRoundComplete } = require('../shared/games/common/betting');
 const { calculatePots, distributePots } = require('../shared/games/common/pots');
 const { getPlayersInHand, getActingPlayerCount, getNextSeat } = require('../shared/games/common/players');
 const { toMoney } = require('../shared/utils');
+const { findHighWinners, findLowWinners } = require('../shared/games/omaha-hilo');
 const { fetchTable, savePlayers, saveGame } = require('./table-fetcher');
 const { publishTableUpdate } = require('./event-publisher');
 const { logger } = require('../shared/config/logger');
@@ -117,6 +118,7 @@ function gamePrep(game, players) {
     player.action = '';
     player.cards = [];
     player.handRank = '';
+    player.lowHandRank = '';
     player.winnings = 0;
   }
 
@@ -124,6 +126,7 @@ function gamePrep(game, players) {
   game.currentBet = 0;
   game.communityCards = [];
   game.sidePots = [];
+  game.lowWinners = [];
   game.deck = shuffle(createDeck());
   game.handStep = GAME_HAND.SETUP_DEALER;
 
@@ -201,12 +204,14 @@ function setupBigBlind(game, players) {
 }
 
 /**
- * Step 4: Deal 2 hole cards to each active player.
+ * Step 4: Deal hole cards to each active player.
+ * Texas Hold'em: 2 cards. Omaha Hi-Lo: 4 cards.
  */
 function dealCards(game, players) {
+  const cardsPerPlayer = game.gameType === GAME.OMAHA_HI_LO ? 4 : 2;
   const active = getPlayersInHand(players);
   for (const player of active) {
-    player.cards = deal(game.deck, 2);
+    player.cards = deal(game.deck, cardsPerPlayer);
   }
 
   // First to act preflop: seat after big blind
@@ -311,6 +316,7 @@ function afterRiverBettingRound(game, players) {
 
 /**
  * Step 13: Determine winner(s). Evaluate hands against community cards.
+ * For Omaha Hi-Lo, evaluates both high and low hands separately.
  */
 function findHandWinners(game, players) {
   const inHand = getPlayersInHand(players);
@@ -319,11 +325,16 @@ function findHandWinners(game, players) {
   if (inHand.length === 1) {
     inHand[0].handRank = 'Last player standing';
     game.winners = [{ seat: inHand[0].seat, playerId: inHand[0].playerId }];
+    game.lowWinners = [];
     game.handStep = GAME_HAND.PAY_WINNERS;
     return { game, players };
   }
 
-  // Evaluate each player's best hand
+  if (game.gameType === GAME.OMAHA_HI_LO) {
+    return findOmahaHiLoWinners(game, players, inHand);
+  }
+
+  // Texas Hold'em: standard evaluation
   const hands = inHand.map((p) => ({
     playerId: p.playerId,
     seat: p.seat,
@@ -332,7 +343,6 @@ function findHandWinners(game, players) {
 
   const winners = findWinners(hands);
 
-  // Tag players with their hand rank
   for (const winner of winners) {
     const player = players.find((p) => p.seat === winner.seat);
     if (player) {
@@ -341,37 +351,101 @@ function findHandWinners(game, players) {
   }
 
   game.winners = winners.map((w) => ({ seat: w.seat, playerId: w.playerId }));
+  game.lowWinners = [];
+  game.handStep = GAME_HAND.PAY_WINNERS;
+  return { game, players };
+}
+
+/**
+ * Omaha Hi-Lo winner evaluation: finds both high and low winners.
+ */
+function findOmahaHiLoWinners(game, players, inHand) {
+  const highWinners = findHighWinners(inHand, game.communityCards);
+
+  for (const hw of highWinners) {
+    const player = players.find((p) => p.seat === hw.seat);
+    if (player) {
+      player.handRank = hw.descr;
+    }
+  }
+
+  const lowWinners = findLowWinners(inHand, game.communityCards);
+
+  for (const lw of lowWinners) {
+    const player = players.find((p) => p.seat === lw.seat);
+    if (player) {
+      player.lowHandRank = lw.descr;
+    }
+  }
+
+  game.winners = highWinners.map((w) => ({ seat: w.seat, playerId: w.playerId }));
+  game.lowWinners = lowWinners.map((w) => ({ seat: w.seat, playerId: w.playerId }));
+
+  if (lowWinners.length === 0) {
+    logger.info(`Omaha Hi-Lo: No qualifying low — high scoops`);
+  } else {
+    logger.info(`Omaha Hi-Lo: Pot splits — ${highWinners.length} high winner(s), ${lowWinners.length} low winner(s)`);
+  }
+
   game.handStep = GAME_HAND.PAY_WINNERS;
   return { game, players };
 }
 
 /**
  * Step 14: Distribute pot to winner(s). Handles side pots.
+ * For Omaha Hi-Lo, splits pots between high and low winners.
  */
 function payWinners(game, players) {
-  const winnerSeats = (game.winners || []).map((w) => w.seat);
+  const hiSeats = (game.winners || []).map((w) => w.seat);
+  const loSeats = (game.lowWinners || []).map((w) => w.seat);
+  const isHiLo = game.gameType === GAME.OMAHA_HI_LO && loSeats.length > 0;
 
-  // Calculate pots (main + side)
   const pots = calculatePots(players);
 
   if (pots.length === 0) {
-    // Simple case: give entire pot to winners
-    const share = toMoney(game.pot / winnerSeats.length);
-    for (const seat of winnerSeats) {
-      const player = players.find((p) => p.seat === seat);
-      if (player) {
-        player.stack = toMoney(player.stack + share);
-        player.winnings = share;
+    // Simple pot distribution
+    if (isHiLo) {
+      distributeHiLoPot(game.pot, hiSeats, loSeats, players);
+    } else {
+      const share = toMoney(game.pot / hiSeats.length);
+      for (const seat of hiSeats) {
+        const player = players.find((p) => p.seat === seat);
+        if (player) {
+          player.stack = toMoney(player.stack + share);
+          player.winnings = share;
+        }
       }
     }
   } else {
-    // Distribute each pot to eligible winners
-    const payouts = distributePots(pots, winnerSeats);
-    for (const [seat, amount] of Object.entries(payouts)) {
-      const player = players.find((p) => p.seat === parseInt(seat, 10));
-      if (player) {
-        player.stack = toMoney(player.stack + amount);
-        player.winnings = amount;
+    if (isHiLo) {
+      // Split each side pot between hi and lo
+      for (const pot of pots) {
+        const eligibleHi = hiSeats.filter((s) => pot.eligible.includes(s));
+        const eligibleLo = loSeats.filter((s) => pot.eligible.includes(s));
+
+        if (eligibleHi.length === 0) continue;
+
+        if (eligibleLo.length === 0) {
+          const share = toMoney(pot.amount / eligibleHi.length);
+          for (const seat of eligibleHi) {
+            const player = players.find((p) => p.seat === seat);
+            if (player) {
+              player.stack = toMoney(player.stack + share);
+              player.winnings = toMoney(player.winnings + share);
+            }
+          }
+        } else {
+          distributeHiLoPot(pot.amount, eligibleHi, eligibleLo, players);
+        }
+      }
+    } else {
+      const payouts = distributePots(pots, hiSeats);
+      for (const [seat, amount] of Object.entries(payouts)) {
+        const player = players.find((p) => p.seat === parseInt(seat, 10));
+        if (player) {
+          player.stack = toMoney(player.stack + amount);
+          player.winnings = amount;
+        }
       }
     }
   }
@@ -379,6 +453,33 @@ function payWinners(game, players) {
   game.pot = 0;
   game.handStep = GAME_HAND.RECORD_STATS_AND_NEW_HAND;
   return { game, players };
+}
+
+/**
+ * Split a pot amount 50/50 between high and low winners.
+ * Odd chip goes to the high winner(s).
+ */
+function distributeHiLoPot(potAmount, hiSeats, loSeats, players) {
+  const loHalf = toMoney(Math.floor((potAmount / 2) * 100) / 100);
+  const hiHalf = toMoney(potAmount - loHalf);
+
+  const hiShare = toMoney(hiHalf / hiSeats.length);
+  for (const seat of hiSeats) {
+    const player = players.find((p) => p.seat === seat);
+    if (player) {
+      player.stack = toMoney(player.stack + hiShare);
+      player.winnings = toMoney(player.winnings + hiShare);
+    }
+  }
+
+  const loShare = toMoney(loHalf / loSeats.length);
+  for (const seat of loSeats) {
+    const player = players.find((p) => p.seat === seat);
+    if (player) {
+      player.stack = toMoney(player.stack + loShare);
+      player.winnings = toMoney(player.winnings + loShare);
+    }
+  }
 }
 
 /**
@@ -424,6 +525,8 @@ module.exports = {
   dealTurn,
   dealRiver,
   findHandWinners,
+  findOmahaHiLoWinners,
   payWinners,
+  distributeHiLoPot,
   recordStatsAndNewHand,
 };

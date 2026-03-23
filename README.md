@@ -1,3 +1,161 @@
+# Hijack Poker — Omaha Hi-Lo (8-or-Better) Implementation
+
+## What Was Built
+
+This branch extends the existing Texas Hold'em engine pipeline with **Omaha Hi-Lo (8-or-better)** — a split-pot poker variant that exercises every layer of the architecture: card dealing, hand evaluation, pot distribution, event broadcasting, and UI rendering. The implementation adds a fully functional new game type that runs alongside Hold'em with zero regressions to existing behavior.
+
+Omaha Hi-Lo was chosen because it is one of the most mechanically demanding variants to implement correctly. It requires enforcing a strict card-selection constraint (exactly 2 of 4 hole cards), implementing an entirely separate hand evaluation system for qualifying low hands, and splitting pots conditionally between high and low winners — including side pots, odd-chip allocation, scooping, and quartering scenarios.
+
+---
+
+## Omaha Hi-Lo Rules (for the Engineer Reviewer)
+
+### Card Selection: The "2+3" Rule
+
+In Texas Hold'em, the best 5 cards are chosen from any combination of the player's 2 hole cards and 5 community cards (7 cards total). In Omaha, each player receives **4 hole cards** but must construct their hand using **exactly 2 hole cards and exactly 3 community cards**. This is not optional — even if a player's 4 hole cards contain a flush, they cannot use more than 2 of them.
+
+This means a player holding A♥K♥Q♥J♥ on a board of T♥9♥2♦3♣4♠ does **not** have an ace-high flush. They must pick exactly 2 of their hole cards and 3 from the board. The best they can make is A♥K♥ + T♥9♥2♦ (flush) or A♥K♥ + T♥9♥4♠ (flush), but never using 3+ hole cards.
+
+This constraint means every hand evaluation requires examining C(4,2) × C(5,3) = **60 valid 5-card combinations** per player.
+
+### The High Hand
+
+The high hand follows standard poker rankings (Royal Flush → High Card). Each player's best high hand is determined from their 60 valid combinations. The player(s) with the strongest high hand win the high half of the pot.
+
+### The Low Hand: 8-or-Better Qualification
+
+The pot is split between the best **high** hand and the best qualifying **low** hand. A qualifying low hand must:
+
+1. Consist of 5 cards all ranked **8 or lower** (Ace counts as 1 for low)
+2. Contain **no pairs** (all 5 ranks must be distinct)
+3. Follow the same 2+3 Omaha rule (exactly 2 hole cards + 3 community cards)
+
+Straights and flushes do **not** count against a low hand. The best possible low is A-2-3-4-5 ("the wheel"), and the worst qualifying low is 4-5-6-7-8.
+
+Low hands are compared top-down from the highest card. For example, 7-5-4-3-A beats 8-4-3-2-A because 7 < 8 in the first position.
+
+### When No Low Is Possible
+
+The board must contain **at least 3 unpaired cards ranked 8 or lower** for any low hand to be possible. If the community cards are K-Q-J-9-2, only one card qualifies — no player can form a valid low regardless of their hole cards. When no qualifying low exists, the **high hand scoops the entire pot**.
+
+In practice, boards produce no qualifying low approximately 40-50% of the time.
+
+### Split Pot Mechanics
+
+When a qualifying low exists:
+- The pot is divided **50/50** between the high winner(s) and the low winner(s)
+- If multiple players tie for high or low, that half is split equally among them
+- **Odd chip** (from indivisible cents) goes to the high winner
+- **Quartering**: If two players tie for low while one wins high, the low players each get 25% of the pot (they split the low half). This is a critical strategic consideration in real Omaha Hi-Lo
+- **Scooping**: A single player can win both high and low, taking the entire pot
+- Side pots from all-in players are each split independently using the same hi-lo logic
+
+---
+
+## Architecture Decisions
+
+### Single Processor, Game-Type Branching
+
+Rather than creating a separate service for Omaha, the existing `holdem-processor` reads `game_type` from the `game_tables` database row and branches at three points in the state machine: dealing (4 cards vs 2), winner evaluation (Omaha hi-lo vs standard), and pot distribution (split vs single). This keeps the architecture simple and demonstrates that the engine was designed for multi-variant support — `game_type` already existed in the schema but was unused.
+
+### Pokersolver Reuse via Combo Enumeration
+
+The high hand evaluator reuses the existing `pokersolver` dependency (already battle-tested for Hold'em in this codebase). For each player, we enumerate all 60 valid 2+3 combinations and solve each as a standard 5-card hand. This is correct because pokersolver's `Hand.solve()` evaluates exactly the 5 cards you give it. No new dependency is needed.
+
+### Custom Low Hand Evaluator
+
+No well-maintained npm package exists for 8-or-better low hand evaluation (the closest, `handranker`, was last published 12 years ago with a deleted source repo). The low evaluator is intentionally simple: for each 5-card combo, check if all ranks are ≤ 8, check for no pairs, then sort descending for comparison. The entire evaluator is ~60 lines with no external dependencies.
+
+### 60-Combination Enumeration
+
+C(4,2) × C(5,3) = 6 × 10 = 60 combinations per player. Even at a 9-player table this is 540 evaluations — trivially fast for a state machine that processes one step per request. The combination utility is shared between high and low evaluators.
+
+---
+
+## How to Validate
+
+### Run the Engine
+
+```bash
+docker compose --profile engine up -d
+```
+
+### Open the Hand Viewer
+
+Navigate to **http://localhost:8080**. Use the **table selector** dropdown to switch between:
+- **Table 1** — Texas Hold'em (existing behavior, unchanged)
+- **Table 3** — Omaha Hi-Lo (new)
+
+### Observe Omaha Hi-Lo Hands
+
+On the Omaha Hi-Lo table:
+1. Click **Auto Play** (or step manually with **Next Step**)
+2. Each player is dealt **4 hole cards** (visible at showdown)
+3. At showdown, each player's **High** and **Low** hand descriptions are displayed
+4. The pot splits between high and low winners when a qualifying low exists
+5. When no low qualifies, the log and display show "No qualifying low — high scoops"
+
+### Simulate via CLI
+
+```bash
+node scripts/simulate-hands.js --table 3 --game-type omaha_hilo --loop
+```
+
+### Run Tests
+
+```bash
+cd serverless-v2/services/holdem-processor
+npm install && cd ../../shared && npm install && cd ../../services/holdem-processor
+npm test
+```
+
+The test suite covers:
+| Test File | What It Covers |
+|-----------|---------------|
+| `omaha-combinations.test.js` | 60-combo enumeration correctness, no duplicates, 2+3 structure |
+| `omaha-high-eval.test.js` | Omaha 2+3 rule enforcement, best-hand selection, multi-player winners |
+| `omaha-low-eval.test.js` | 8-or-better qualification, no-low boards, low ranking/comparison |
+| `omaha-pot-split.test.js` | Hi-lo split, scooping, odd chip, side pots, quartering |
+| `omaha-hilo-hand.test.js` | Full 16-step hand integration (GAME_PREP → RECORD_STATS) |
+| `process-table.test.js` | Original 15 Hold'em tests — all pass, zero regressions |
+
+### Scenarios to Look For
+
+- **Low qualifies**: Board has 3+ cards ≤ 8. Pot splits between high and low winner. Check that stacks add up correctly.
+- **No qualifying low**: Board is all high cards. High hand scoops entire pot. Log shows "No qualifying low."
+- **Same player scoops**: One player wins both high and low. They receive the full pot.
+
+---
+
+## File Change Manifest
+
+| File | Change |
+|------|--------|
+| **Evaluation Module (new)** | |
+| `serverless-v2/shared/games/omaha-hilo/combinations.js` | Combo enumeration: C(4,2) × C(5,3) |
+| `serverless-v2/shared/games/omaha-hilo/high-eval.js` | Omaha high hand evaluator via pokersolver |
+| `serverless-v2/shared/games/omaha-hilo/low-eval.js` | 8-or-better low hand evaluator |
+| `serverless-v2/shared/games/omaha-hilo/index.js` | Module re-exports |
+| **Engine Pipeline (modified)** | |
+| `serverless-v2/shared/games/common/constants.js` | Added `OMAHA_HI_LO` to `GAME` enum |
+| `serverless-v2/services/holdem-processor/lib/process-table.js` | Branches at deal, find winners, pay winners |
+| `serverless-v2/services/holdem-processor/lib/table-fetcher.js` | Selects + normalizes `game_type`, persists `low_winners`/`low_hand_rank` |
+| `serverless-v2/services/holdem-processor/lib/event-publisher.js` | Dynamic `gameType` from DB instead of hardcoded |
+| `serverless-v2/services/holdem-processor/handler.js` | Exposes `gameType`, `lowHandRank` in API response |
+| **Infrastructure (modified)** | |
+| `infrastructure/mysql-init/01-schema.sql` | Added `low_winners`/`low_hand_rank` columns, Omaha Hi-Lo table seed |
+| `scripts/simulate-hands.js` | Added `--game-type` CLI flag |
+| **UI (modified)** | |
+| `ui/index.html` | 4-card layout, hi/lo display, table selector, game type label |
+| **Tests (new)** | |
+| `holdem-processor/__tests__/omaha-combinations.test.js` | Combination utility tests |
+| `holdem-processor/__tests__/omaha-high-eval.test.js` | High hand evaluator tests |
+| `holdem-processor/__tests__/omaha-low-eval.test.js` | Low hand evaluator tests |
+| `holdem-processor/__tests__/omaha-pot-split.test.js` | Hi-lo pot splitting tests |
+| `holdem-processor/__tests__/omaha-hilo-hand.test.js` | Full hand integration test |
+
+---
+
 # Hijack Poker — Technical Assignment
 
 Welcome to the Hijack Poker technical challenge. This repo provides a working serverless infrastructure skeleton that mirrors our production architecture. Your job is to build one of four challenge options on top of it.

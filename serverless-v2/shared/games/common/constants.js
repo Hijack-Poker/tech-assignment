@@ -92,6 +92,7 @@ const TRANSACTION_TYPE = {
 const GAME = {
   TEXAS: 'texas',
   OMAHA: 'omaha',
+  OMAHA_HI_LO: 'omaha_hilo',
 };
 
 /**

@@ -10,10 +10,16 @@
  * Run after `docker compose --profile engine up`.
  *
  * Usage:
- *   node scripts/simulate-hands.js              # Send 16 messages (full hand)
- *   node scripts/simulate-hands.js --count 5    # Send 5 messages
- *   node scripts/simulate-hands.js --table 2    # Process table 2
- *   node scripts/simulate-hands.js --loop       # Continuously send messages
+ *   node scripts/simulate-hands.js                                       # Send 16 messages (full hand)
+ *   node scripts/simulate-hands.js --count 5                             # Send 5 messages
+ *   node scripts/simulate-hands.js --table 2                             # Process table 2
+ *   node scripts/simulate-hands.js --table 3 --game-type omaha_hilo      # Process Omaha Hi-Lo table
+ *   node scripts/simulate-hands.js --loop                                # Continuously send messages
+ *
+ * Tables:
+ *   1 = Starter Table (Texas Hold'em)
+ *   2 = High Stakes (Texas Hold'em)
+ *   3 = Omaha Hi-Lo Table
  */
 
 'use strict';
@@ -33,10 +39,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendMessage(tableId) {
+async function sendMessage(tableId, gameType) {
   const body = JSON.stringify({
     tableId,
-    gameType: 'texas',
+    gameType,
     timestamp: Date.now(),
   });
 
@@ -58,11 +64,12 @@ async function sendMessage(tableId) {
 async function main() {
   const args = process.argv.slice(2);
   const tableId = parseInt(getArg(args, '--table') || '1', 10);
+  const gameType = getArg(args, '--game-type') || 'texas';
   const count = parseInt(getArg(args, '--count') || '16', 10);
   const loop = args.includes('--loop');
   const delay = parseInt(getArg(args, '--delay') || '1000', 10);
 
-  console.log(`Simulating hands for table ${tableId}`);
+  console.log(`Simulating hands for table ${tableId} (${gameType})`);
   console.log(`SQS endpoint: ${SQS_ENDPOINT}`);
   console.log(`Queue URL: ${QUEUE_URL}`);
   console.log('');
@@ -71,7 +78,7 @@ async function main() {
     console.log('Loop mode — sending messages every second. Ctrl+C to stop.\n');
     let i = 0;
     while (true) {
-      await sendMessage(tableId);
+      await sendMessage(tableId, gameType);
       i++;
       if (i % 16 === 0) {
         console.log(`\n--- Hand ${i / 16} complete. Starting next hand... ---\n`);
@@ -81,7 +88,7 @@ async function main() {
   } else {
     console.log(`Sending ${count} messages (one per hand step)...\n`);
     for (let i = 0; i < count; i++) {
-      await sendMessage(tableId);
+      await sendMessage(tableId, gameType);
       await sleep(delay);
     }
     console.log(`\nDone! Sent ${count} messages.`);

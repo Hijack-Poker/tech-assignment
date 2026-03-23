@@ -34,7 +34,7 @@
     #table-area {
       position: relative;
       width: 700px;
-      height: 420px;
+      height: 500px;
       margin: 0 auto;
     }
 
@@ -134,6 +134,12 @@
       font-size: 12px;
     }
 
+    .seat.four-card .cards .card {
+      width: 27px;
+      height: 38px;
+      font-size: 10px;
+    }
+
     .seat .bet-badge {
       font-size: 11px;
       color: #ffd700;
@@ -153,7 +159,13 @@
       font-size: 10px;
       color: #4fc3f7;
       margin-top: 2px;
-      height: 14px;
+      min-height: 14px;
+    }
+
+    .seat .lo-hand-rank {
+      font-size: 10px;
+      color: #ffab40;
+      min-height: 14px;
     }
 
     .seat .winnings {
@@ -191,8 +203,8 @@
     .seat[data-seat="1"] { top: -10px;  left: 150px; }
     .seat[data-seat="2"] { top: -10px;  left: 420px; }
     .seat[data-seat="3"] { top: 175px;  left: 555px; }
-    .seat[data-seat="4"] { top: 355px;  left: 420px; }
-    .seat[data-seat="5"] { top: 355px;  left: 150px; }
+    .seat[data-seat="4"] { top: 380px;  left: 420px; }
+    .seat[data-seat="5"] { top: 380px;  left: 150px; }
     .seat[data-seat="6"] { top: 175px;  left: 15px; }
 
     /* Controls */
@@ -243,10 +255,47 @@
     #log .entry .info { color: #888; }
     #log .entry .winner { color: #66bb6a; }
     #log .entry .error { color: #ef5350; }
+
+    #table-selector {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    #table-selector label {
+      font-size: 13px;
+      color: #aaa;
+    }
+
+    #table-selector select {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #2a2a40;
+      color: #eee;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    #game-type-label {
+      font-size: 12px;
+      color: #ce93d8;
+      margin-bottom: 12px;
+      height: 16px;
+    }
   </style>
 </head>
 <body>
   <h1>HIJACK POKER</h1>
+  <div id="table-selector">
+    <label for="table-select">Table:</label>
+    <select id="table-select" onchange="switchTable()">
+      <option value="1">Table 1 — Texas Hold'em</option>
+      <option value="3">Table 3 — Omaha Hi-Lo</option>
+    </select>
+  </div>
+  <div id="game-type-label"></div>
   <div id="phase">Connecting...</div>
 
   <div id="table-area">
@@ -267,7 +316,7 @@
 
 <script>
 const API = 'http://localhost:3030';
-const TABLE_ID = 1;
+let TABLE_ID = 1;
 
 let autoPlaying = false;
 let autoTimer = null;
@@ -329,6 +378,11 @@ function render(data) {
   if (!data) return;
   const { game, players } = data;
 
+  // Game type label
+  const gtLabel = document.getElementById('game-type-label');
+  const gtNames = { texas: 'Texas Hold\'em', omaha_hilo: 'Omaha Hi-Lo (8-or-Better)', omaha: 'Omaha' };
+  gtLabel.textContent = gtNames[game.gameType] || game.gameType || '';
+
   // Phase
   const phase = document.getElementById('phase');
   const label = PHASE_LABELS[game.stepName] || game.stepName;
@@ -369,6 +423,7 @@ function render(data) {
     if (p.seat === game.dealerSeat) seat.classList.add('dealer');
     else if (p.seat === game.smallBlindSeat) seat.classList.add('sb');
     else if (p.seat === game.bigBlindSeat) seat.classList.add('bb');
+    if (p.cards && p.cards.length === 4) seat.classList.add('four-card');
 
     // Player cards
     let cardsHtml = '';
@@ -391,7 +446,8 @@ function render(data) {
     const betHtml = p.bet > 0 ? `$${p.bet.toFixed(2)}` : '';
 
     // Hand rank (on showdown)
-    const rankHtml = p.handRank ? `<div class="hand-rank">${p.handRank}</div>` : '';
+    const rankHtml = p.handRank ? `<div class="hand-rank">Hi: ${p.handRank}</div>` : '';
+    const loRankHtml = p.lowHandRank ? `<div class="lo-hand-rank">Lo: ${p.lowHandRank}</div>` : '';
 
     // Winnings
     const winHtml = p.winnings > 0 ? `<div class="winnings">+$${p.winnings.toFixed(2)}</div>` : '';
@@ -403,6 +459,7 @@ function render(data) {
       <div class="bet-badge">${betHtml}</div>
       ${actionHtml}
       ${rankHtml}
+      ${loRankHtml}
       ${winHtml}
     `;
 
@@ -434,17 +491,20 @@ async function nextStep() {
 
     const data = await res.json();
 
-    if (data.success) {
+    if (!res.ok) {
+      log('Error: ' + (data.error || JSON.stringify(data)), 'error');
+    } else if (data.success && data.result?.stepName) {
       const stepName = data.result.stepName;
       const label = PHASE_LABELS[stepName] || stepName;
       log(label, 'step-name');
 
-      // Detect new hand
       if (stepName === 'RECORD_STATS_AND_NEW_HAND') {
         log(`Hand complete. Winners paid.`, 'winner');
       }
+    } else if (data.result?.status === 'not_found') {
+      log('Table not found — check DB seed data', 'error');
     } else {
-      log('Error: ' + JSON.stringify(data), 'error');
+      log('Error: ' + (data.error || JSON.stringify(data)), 'error');
     }
 
     // Refresh table view
@@ -503,6 +563,19 @@ function cycleSpeed() {
   speedIdx = (speedIdx + 1) % speeds.length;
   const labels = ['1s', '0.5s', '0.25s', '2s'];
   document.getElementById('btn-speed').textContent = labels[speedIdx];
+}
+
+async function switchTable() {
+  stopAuto();
+  TABLE_ID = parseInt(document.getElementById('table-select').value, 10);
+  log(`Switched to table ${TABLE_ID}`, 'info');
+  const state = await fetchTableState();
+  if (state) {
+    render(state);
+  } else {
+    document.getElementById('phase').textContent = 'Ready \u2014 click Next Step to begin';
+    document.getElementById('game-type-label').textContent = '';
+  }
 }
 
 // ── Log ─────────────────────────────────────────────────────────
