@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
 const { Router } = require('express');
 const { validate } = require('../middleware/validate');
 const { awardPointsSchema } = require('../schemas/points.schema');
@@ -66,7 +65,7 @@ router.post('/award', validate(awardPointsSchema), async (req, res) => {
     // 4. Write transaction to immutable ledger
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const timestamp = `${now.toISOString()}#${crypto.randomUUID().slice(0, 4)}`;
+    const timestamp = Date.now() * 1000 + Math.floor(Math.random() * 1000);
 
     await dynamo.createTransaction({
       playerId,
