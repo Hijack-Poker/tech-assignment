@@ -1,0 +1,986 @@
+openapi: 3.1.0
+info:
+  title: Hijack Poker Rewards API
+  version: 1.0.0
+  description: |
+    Loyalty rewards system for Hijack Poker. Players earn points from gameplay,
+    progress through tiers (Bronze → Silver → Gold → Platinum), and compete on
+    monthly leaderboards.
+
+    ## Authentication
+    - **Player endpoints** require `X-Player-Id` header (stub JWT guard).
+    - **Admin endpoints** require `X-Admin-Key` header.
+
+    ## Tier System
+    | Tier | Monthly Threshold | Multiplier |
+    |------|-------------------|------------|
+    | Bronze | 0 | 1.0x |
+    | Silver | 500 | 1.25x |
+    | Gold | 2,000 | 1.5x |
+    | Platinum | 10,000 | 2.0x |
+
+    Tiers upgrade immediately when thresholds are reached. Monthly reset drops
+    players by at most one tier (floor protection).
+
+    ## Points Engine
+    | Big Blind | Base Points |
+    |-----------|-------------|
+    | $0.10–$0.25 | 1 |
+    | $0.50–$1.00 | 2 |
+    | $2.00–$5.00 | 5 |
+    | $10.00+ | 10 |
+
+    Earned points = base points × tier multiplier. All transactions are immutable
+    (append-only ledger).
+  contact:
+    name: Hijack Poker Engineering
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:5000
+    description: Local development (Docker Compose)
+
+tags:
+  - name: Health
+    description: Service health check
+  - name: Points
+    description: Points ingestion and leaderboard
+  - name: Player
+    description: Player rewards, history, and tier data
+  - name: Notifications
+    description: Player notification management
+  - name: Admin
+    description: Admin-only endpoints (no UI)
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/points/award:
+    post:
+      tags: [Points]
+      summary: Award points for a completed hand
+      operationId: awardPoints
+      description: |
+        Called by the game processor after each hand. Calculates base points from
+        stakes, applies tier multiplier, writes an immutable ledger entry, updates
+        monthly/lifetime totals, checks tier advancement, updates leaderboard, and
+        checks milestone achievements.
+
+        **Idempotent** — duplicate `handId` for the same player returns 409.
+      security:
+        - playerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AwardPointsRequest"
+            example:
+              playerId: "abc-123"
+              tableId: 456
+              tableStakes: "2/5"
+              bigBlind: 5.00
+              handId: "hand-789"
+      responses:
+        "200":
+          description: Points awarded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AwardPointsResponse"
+              example:
+                playerId: "abc-123"
+                basePoints: 5
+                multiplier: 1.5
+                earnedPoints: 7.5
+                monthlyPoints: 1207.5
+                currentTier:
+                  level: 3
+                  name: Gold
+                tierChanged: false
+        "409":
+          description: Duplicate hand — already processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: DUPLICATE_HAND
+                  message: "Hand hand-789 already processed for this player"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/leaderboard:
+    get:
+      tags: [Points]
+      summary: Get monthly leaderboard
+      operationId: getLeaderboard
+      security: []
+      description: |
+        Returns top players by monthly points. Pass `X-Player-Id` header to
+        include the requesting player's rank even if outside the top N.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Number of entries to return
+        - name: monthKey
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+          description: "Month to query (YYYY-MM). Defaults to current month."
+          example: "2026-03"
+        - name: X-Player-Id
+          in: header
+          schema:
+            type: string
+          description: Optional player ID — includes player's own rank in response
+      responses:
+        "200":
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/player/rewards:
+    get:
+      tags: [Player]
+      summary: Get player rewards summary
+      operationId: getPlayerRewards
+      description: |
+        Returns current tier, monthly/lifetime points, progress toward next tier,
+        and tier multiplier. Used by both the web dashboard and Unity client.
+      security:
+        - playerAuth: []
+      responses:
+        "200":
+          description: Player rewards summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerRewardsResponse"
+              example:
+                playerId: "abc-123"
+                displayName: Alice
+                currentTier:
+                  level: 3
+                  name: Gold
+                  multiplier: 1.5
+                monthlyPoints: 2450
+                lifetimePoints: 12300
+                nextTier:
+                  level: 4
+                  name: Platinum
+                  threshold: 10000
+                  pointsNeeded: 7550
+                  progressPercent: 25
+                monthKey: "2026-03"
+        "404":
+          description: Player not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: PLAYER_NOT_FOUND
+                  message: Player not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/player/rewards/history:
+    get:
+      tags: [Player]
+      summary: Get points transaction history
+      operationId: getPlayerHistory
+      description: |
+        Returns paginated, immutable points transaction history sorted by
+        most recent first. Each entry includes base points, multiplier, earned
+        points, table info, and transaction type.
+      security:
+        - playerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Number of transactions per page
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of transactions to skip
+      responses:
+        "200":
+          description: Paginated transaction history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/player/rewards/tier-history:
+    get:
+      tags: [Player]
+      summary: Get tier history (last 6 months)
+      operationId: getTierHistory
+      description: |
+        Returns monthly tier snapshots for the last 6 months, used to render the
+        tier timeline chart on the dashboard.
+      security:
+        - playerAuth: []
+      responses:
+        "200":
+          description: Tier history entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TierHistoryResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/player/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get player notifications
+      operationId: getNotifications
+      description: |
+        Returns all notifications for the authenticated player, sorted by
+        creation date descending. Includes unread count. Filter to unread
+        only with `?unread=true`.
+      security:
+        - playerAuth: []
+      parameters:
+        - name: unread
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Filter to unread (undismissed) notifications only
+      responses:
+        "200":
+          description: Notification list with unread count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/player/notifications/{id}/dismiss:
+    patch:
+      tags: [Notifications]
+      summary: Dismiss a notification
+      operationId: dismissNotification
+      description: |
+        Marks a notification as dismissed. Verifies ownership via the
+        authenticated player's ID.
+      security:
+        - playerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Notification ID
+      responses:
+        "200":
+          description: Notification dismissed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "404":
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: NOT_FOUND
+                  message: Notification not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/players/{playerId}/rewards:
+    get:
+      tags: [Admin]
+      summary: Get full player rewards profile
+      operationId: adminGetPlayerRewards
+      description: |
+        Returns the complete player record, last 20 transactions, and
+        6-month tier history.
+      security:
+        - adminAuth: []
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full player rewards profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPlayerRewardsResponse"
+        "404":
+          description: Player not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/points/adjust:
+    post:
+      tags: [Admin]
+      summary: Manually adjust player points
+      operationId: adminAdjustPoints
+      description: |
+        Credit or debit points for a player with a reason. Creates an adjustment
+        transaction in the immutable ledger, updates totals atomically, checks
+        tier advancement (for positive adjustments), and updates the leaderboard.
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustPointsRequest"
+            example:
+              playerId: "abc-123"
+              points: -100
+              reason: "Tournament penalty"
+      responses:
+        "200":
+          description: Points adjusted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdjustPointsResponse"
+        "404":
+          description: Player not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/leaderboard:
+    get:
+      tags: [Admin]
+      summary: Get admin leaderboard (includes player IDs)
+      operationId: adminGetLeaderboard
+      security:
+        - adminAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: monthKey
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+          description: "Month (YYYY-MM). Defaults to current month."
+      responses:
+        "200":
+          description: Admin leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLeaderboardResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/tier/override:
+    post:
+      tags: [Admin]
+      summary: Override a player's tier
+      operationId: adminTierOverride
+      description: |
+        Force-set a player's tier. Creates a notification about the change.
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TierOverrideRequest"
+            example:
+              playerId: "abc-123"
+              tier: 4
+              reason: "VIP promotion"
+      responses:
+        "200":
+          description: Tier overridden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TierOverrideResponse"
+        "404":
+          description: Player not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/monthly-reset:
+    post:
+      tags: [Admin]
+      summary: Process monthly tier reset for all players
+      operationId: adminMonthlyReset
+      description: |
+        Processes monthly reset for all players:
+        1. Records tier history for the previous month
+        2. Calculates new tier (floor protection — max 1 tier drop)
+        3. Resets monthly points to 0
+        4. Creates downgrade notifications for affected players
+      security:
+        - adminAuth: []
+      responses:
+        "200":
+          description: Monthly reset processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyResetResponse"
+              example:
+                playersProcessed: 6
+                tierChanges:
+                  - playerId: "abc-123"
+                    from: 4
+                    to: 3
+                  - playerId: "def-456"
+                    from: 3
+                    to: 2
+                month: "2026-02"
+        "403":
+          description: Forbidden — invalid or missing admin key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    playerAuth:
+      type: apiKey
+      in: header
+      name: X-Player-Id
+      description: Player identifier (stub JWT guard)
+    adminAuth:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+      description: Admin API key
+
+  responses:
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An internal error occurred
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [service, status, timestamp]
+      properties:
+        service:
+          type: string
+          example: rewards-api
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+
+    AwardPointsRequest:
+      type: object
+      required: [playerId, tableId, tableStakes, bigBlind, handId]
+      properties:
+        playerId:
+          type: string
+          minLength: 1
+          description: Player identifier
+        tableId:
+          type: integer
+          minimum: 1
+          description: Table identifier
+        tableStakes:
+          type: string
+          minLength: 1
+          description: "Table stakes label (e.g., '2/5')"
+        bigBlind:
+          type: number
+          exclusiveMinimum: 0
+          description: Big blind amount in dollars
+        handId:
+          type: string
+          minLength: 1
+          description: Unique hand identifier (used for idempotency)
+
+    AwardPointsResponse:
+      type: object
+      required: [playerId, basePoints, multiplier, earnedPoints, monthlyPoints, currentTier, tierChanged]
+      properties:
+        playerId:
+          type: string
+        basePoints:
+          type: integer
+          description: Points before multiplier (1, 2, 5, or 10)
+        multiplier:
+          type: number
+          description: Tier multiplier applied (1.0, 1.25, 1.5, or 2.0)
+        earnedPoints:
+          type: number
+          description: "basePoints × multiplier"
+        monthlyPoints:
+          type: number
+          description: Updated monthly total
+        currentTier:
+          $ref: "#/components/schemas/TierSummary"
+        tierChanged:
+          type: boolean
+          description: Whether this award triggered a tier upgrade
+
+    PlayerRewardsResponse:
+      type: object
+      required: [playerId, displayName, currentTier, monthlyPoints, lifetimePoints, monthKey]
+      properties:
+        playerId:
+          type: string
+        displayName:
+          type: string
+        currentTier:
+          type: object
+          required: [level, name, multiplier]
+          properties:
+            level:
+              type: integer
+              minimum: 1
+              maximum: 4
+            name:
+              type: string
+              enum: [Bronze, Silver, Gold, Platinum]
+            multiplier:
+              type: number
+        monthlyPoints:
+          type: number
+        lifetimePoints:
+          type: number
+        nextTier:
+          type: ["object", "null"]
+          description: "Null if player is Platinum (max tier)"
+          properties:
+            level:
+              type: integer
+            name:
+              type: string
+            threshold:
+              type: integer
+            pointsNeeded:
+              type: number
+            progressPercent:
+              type: integer
+              minimum: 0
+              maximum: 100
+        monthKey:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+
+    HistoryResponse:
+      type: object
+      required: [transactions, pagination]
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        pagination:
+          type: object
+          required: [limit, offset, total]
+          properties:
+            limit:
+              type: integer
+            offset:
+              type: integer
+            total:
+              type: integer
+
+    Transaction:
+      type: object
+      required: [playerId, timestamp, type, basePoints, multiplier, earnedPoints, monthKey]
+      properties:
+        playerId:
+          type: string
+        timestamp:
+          type: string
+          description: "ISO 8601 timestamp with uniqueness suffix (e.g., '2026-03-21T18:30:00.000Z#a1b2')"
+        handId:
+          type: string
+          description: Present for gameplay transactions
+        type:
+          type: string
+          enum: [gameplay, adjustment, bonus]
+        basePoints:
+          type: number
+        multiplier:
+          type: number
+        earnedPoints:
+          type: number
+        tableId:
+          type: integer
+          description: Present for gameplay transactions
+        tableStakes:
+          type: string
+          description: Present for gameplay transactions
+        bigBlind:
+          type: number
+          description: Present for gameplay transactions
+        monthKey:
+          type: string
+        reason:
+          type: string
+          description: Present for adjustment transactions
+
+    TierSummary:
+      type: object
+      required: [level, name]
+      properties:
+        level:
+          type: integer
+          minimum: 1
+          maximum: 4
+        name:
+          type: string
+          enum: [Bronze, Silver, Gold, Platinum]
+
+    TierHistoryResponse:
+      type: object
+      required: [tierHistory]
+      properties:
+        tierHistory:
+          type: array
+          items:
+            type: object
+            required: [playerId, monthKey, tier, monthlyPoints]
+            properties:
+              playerId:
+                type: string
+              monthKey:
+                type: string
+              tier:
+                type: integer
+                minimum: 1
+                maximum: 4
+              monthlyPoints:
+                type: number
+              peakTier:
+                type: integer
+
+    NotificationsResponse:
+      type: object
+      required: [notifications, unreadCount]
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unreadCount:
+          type: integer
+          minimum: 0
+
+    Notification:
+      type: object
+      required: [playerId, type, title, message, dismissed, createdAt]
+      properties:
+        playerId:
+          type: string
+        notificationId:
+          type: string
+        type:
+          type: string
+          enum: [tier_upgrade, tier_downgrade, milestone]
+        title:
+          type: string
+        message:
+          type: string
+        dismissed:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    LeaderboardResponse:
+      type: object
+      required: [monthKey, leaderboard]
+      properties:
+        monthKey:
+          type: string
+        leaderboard:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+        playerRank:
+          type: ["object", "null"]
+          description: "Present only if X-Player-Id header was provided"
+          properties:
+            rank:
+              type: integer
+            monthlyPoints:
+              type: number
+
+    LeaderboardEntry:
+      type: object
+      required: [rank, playerId, displayName, tier, monthlyPoints]
+      properties:
+        rank:
+          type: integer
+        playerId:
+          type: string
+        displayName:
+          type: string
+        tier:
+          $ref: "#/components/schemas/TierSummary"
+        monthlyPoints:
+          type: number
+
+    AdjustPointsRequest:
+      type: object
+      required: [playerId, points, reason]
+      properties:
+        playerId:
+          type: string
+          minLength: 1
+        points:
+          type: integer
+          description: Positive to credit, negative to debit
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    AdjustPointsResponse:
+      type: object
+      required: [playerId, previousPoints, adjustment, currentPoints, currentTier]
+      properties:
+        playerId:
+          type: string
+        previousPoints:
+          type: object
+          properties:
+            monthly:
+              type: number
+            lifetime:
+              type: number
+        adjustment:
+          type: integer
+        currentPoints:
+          type: object
+          properties:
+            monthly:
+              type: number
+            lifetime:
+              type: number
+        currentTier:
+          type: integer
+
+    TierOverrideRequest:
+      type: object
+      required: [playerId, tier, reason]
+      properties:
+        playerId:
+          type: string
+          minLength: 1
+        tier:
+          type: integer
+          minimum: 1
+          maximum: 4
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    TierOverrideResponse:
+      type: object
+      required: [playerId, previousTier, currentTier, reason]
+      properties:
+        playerId:
+          type: string
+        previousTier:
+          type: integer
+        currentTier:
+          type: integer
+        reason:
+          type: string
+
+    AdminPlayerRewardsResponse:
+      type: object
+      required: [player, transactions, tierHistory]
+      properties:
+        player:
+          type: object
+          description: Full player record from DynamoDB
+          properties:
+            playerId:
+              type: string
+            displayName:
+              type: string
+            currentTier:
+              type: integer
+            monthlyPoints:
+              type: number
+            lifetimePoints:
+              type: number
+            lastResetMonth:
+              type: ["string", "null"]
+            createdAt:
+              type: string
+            updatedAt:
+              type: string
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+          description: Last 20 transactions
+        tierHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              playerId:
+                type: string
+              monthKey:
+                type: string
+              tier:
+                type: integer
+              monthlyPoints:
+                type: number
+              peakTier:
+                type: integer
+
+    AdminLeaderboardResponse:
+      type: object
+      required: [monthKey, leaderboard]
+      properties:
+        monthKey:
+          type: string
+        leaderboard:
+          type: array
+          items:
+            type: object
+            required: [rank, playerId, displayName, tier, monthlyPoints]
+            properties:
+              rank:
+                type: integer
+              playerId:
+                type: string
+              displayName:
+                type: string
+              tier:
+                type: integer
+              monthlyPoints:
+                type: number
+
+    MonthlyResetResponse:
+      type: object
+      required: [playersProcessed, tierChanges, month]
+      properties:
+        playersProcessed:
+          type: integer
+        tierChanges:
+          type: array
+          items:
+            type: object
+            properties:
+              playerId:
+                type: string
+              from:
+                type: integer
+              to:
+                type: integer
+        month:
+          type: string
+          description: The month that was reset (previous month key)
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - VALIDATION_ERROR
+                - PLAYER_NOT_FOUND
+                - DUPLICATE_HAND
+                - UNAUTHORIZED
+                - FORBIDDEN
+                - INTERNAL_ERROR
+                - RATE_LIMITED
+                - NOT_FOUND
+            message:
+              type: string

@@ -123,6 +123,13 @@ npm run seed:rewards
 
 ### API Endpoints
 
+#### API Documentation
+
+Full OpenAPI 3.1 spec: [`serverless-v2/services/rewards-api/openapi.yaml`](serverless-v2/services/rewards-api/openapi.yaml)
+
+When the API is running, interactive docs are available at:
+- **Swagger UI**: http://localhost:5000/docs
+
 #### Player Endpoints (auth: `X-Player-Id` header)
 
 | Method | Path | Description |

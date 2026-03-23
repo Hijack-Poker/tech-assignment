@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const serverless = require('serverless-http');
 const helmet = require('helmet');
@@ -13,9 +15,16 @@ const notificationsRoute = require('./src/routes/notifications');
 const adminRoute = require('./src/routes/admin');
 const { authMiddleware } = require('./src/middleware/auth');
 
+const openapiSpec = JSON.parse(JSON.stringify(
+  require('yaml').parse(fs.readFileSync(path.join(__dirname, 'openapi.yaml'), 'utf8'))
+));
+
 const app = express();
 
-app.use(helmet());
+app.use((req, res, next) => {
+  if (req.path.startsWith('/docs')) return next();
+  return helmet()(req, res, next);
+});
 app.use(cors({
   origin: ['http://localhost:4000'],
   methods: ['GET', 'POST', 'PATCH', 'PUT'],
@@ -39,6 +48,22 @@ const adminLimiter = rateLimit({
 
 // Public routes
 app.use('/api/v1/health', healthRoute);
+app.get('/docs/openapi.json', (req, res) => res.json(openapiSpec));
+app.get('/docs', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Rewards API — Swagger UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>SwaggerUIBundle({ url: '/docs/openapi.json', dom_id: '#swagger-ui' });</script>
+</body>
+</html>`);
+});
 
 // Leaderboard (public — X-Player-Id optional for rank lookup)
 app.use('/api/v1', apiLimiter, pointsRoute);
