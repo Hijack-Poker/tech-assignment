@@ -17,6 +17,7 @@ functions:
       - httpApi: '*'
 
 plugins:
+  - serverless-plugin-typescript
   - serverless-offline
 
 custom:
