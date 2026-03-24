@@ -42,11 +42,12 @@ async function handler(event) {
 
 /**
  * HTTP endpoint for manual trigger (serverless-offline dev).
+ * Accepts optional player action: { tableId, seat, action, amount }
  */
 async function processHandHttp(event) {
   try {
     const body = JSON.parse(event.body || '{}');
-    const { tableId } = body;
+    const { tableId, seat, action, amount } = body;
 
     if (!tableId) {
       return {
@@ -56,7 +57,38 @@ async function processHandHttp(event) {
       };
     }
 
-    const result = await processTable(tableId);
+    // Build player action if provided
+    const playerAction = (seat != null && action)
+      ? { seat: parseInt(seat, 10), action, amount: amount != null ? parseFloat(amount) : 0 }
+      : undefined;
+
+    const result = await processTable(tableId, playerAction);
+
+    // If engine is awaiting a player action, return the current state
+    if (result && result.awaiting) {
+      return {
+        statusCode: 200,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+          success: true,
+          result: {
+            status: 'awaiting_action',
+            tableId,
+            step: result.game ? result.game.handStep : 0,
+            stepName: result.game ? getStepName(result.game.handStep) : '',
+            move: result.game ? result.game.move : 0,
+          },
+        }),
+      };
+    }
+
+    if (result && result.error) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ success: false, error: result.error }),
+      };
+    }
 
     return {
       statusCode: 200,
@@ -71,6 +103,12 @@ async function processHandHttp(event) {
       body: JSON.stringify({ error: err.message }),
     };
   }
+}
+
+function getStepName(step) {
+  const { GAME_HAND } = require('./shared/games/common/constants');
+  const entry = Object.entries(GAME_HAND).find(([, v]) => v === step);
+  return entry ? entry[0] : `UNKNOWN(${step})`;
 }
 
 /**
@@ -138,6 +176,54 @@ async function getTableHttp(event) {
 }
 
 /**
+ * POST /reset — Reset the table by marking the current game as completed
+ * and creating a fresh game via the next processTable call.
+ */
+async function resetTableHttp(event) {
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const { tableId } = body;
+
+    if (!tableId) {
+      return {
+        statusCode: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'tableId is required' }),
+      };
+    }
+
+    const { sequelize } = require('./shared/config/db');
+    const { QueryTypes } = require('sequelize');
+
+    // Delete all games and game_players for this table to start fresh
+    await sequelize.query(
+      `DELETE FROM game_players WHERE table_id = :tableId`,
+      { replacements: { tableId }, type: QueryTypes.DELETE }
+    );
+    await sequelize.query(
+      `DELETE FROM games WHERE table_id = :tableId`,
+      { replacements: { tableId }, type: QueryTypes.DELETE }
+    );
+
+    // Process the table — this will create game #1 via createNewGame
+    const result = await processTable(parseInt(tableId, 10));
+
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, message: 'Table reset', result }),
+    };
+  } catch (err) {
+    logger.error(`Reset error: ${err.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: err.message }),
+    };
+  }
+}
+
+/**
  * Health check endpoint.
  */
 async function health() {
@@ -152,4 +238,4 @@ async function health() {
   };
 }
 
-module.exports = { handler, processHandHttp, getTableHttp, health };
+module.exports = { handler, processHandHttp, getTableHttp, resetTableHttp, health };

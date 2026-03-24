@@ -18,10 +18,11 @@ const { logger } = require('../shared/config/logger');
  * saves the new state. The pipeline calls this repeatedly until the hand
  * is complete.
  *
- * This is the core of the game engine — candidates implementing Bomb Pots
- * will add a new hand variant that modifies this flow.
+ * For betting rounds, pass a playerAction { seat, action, amount } to
+ * apply the player's decision. If no action is provided during a betting
+ * round, the engine returns an awaiting_action status.
  */
-async function processTable(tableId) {
+async function processTable(tableId, playerAction) {
   const table = await fetchTable(tableId);
   if (!table) {
     logger.warn(`Table ${tableId} not found`);
@@ -48,25 +49,25 @@ async function processTable(tableId) {
       result = dealCards(game, players);
       break;
     case GAME_HAND.PRE_FLOP_BETTING_ROUND:
-      result = bettingRound(game, players, 'preflop');
+      result = bettingRound(game, players, 'preflop', playerAction);
       break;
     case GAME_HAND.DEAL_FLOP:
       result = dealFlop(game, players);
       break;
     case GAME_HAND.FLOP_BETTING_ROUND:
-      result = bettingRound(game, players, 'flop');
+      result = bettingRound(game, players, 'flop', playerAction);
       break;
     case GAME_HAND.DEAL_TURN:
       result = dealTurn(game, players);
       break;
     case GAME_HAND.TURN_BETTING_ROUND:
-      result = bettingRound(game, players, 'turn');
+      result = bettingRound(game, players, 'turn', playerAction);
       break;
     case GAME_HAND.DEAL_RIVER:
       result = dealRiver(game, players);
       break;
     case GAME_HAND.RIVER_BETTING_ROUND:
-      result = bettingRound(game, players, 'river');
+      result = bettingRound(game, players, 'river', playerAction);
       break;
     case GAME_HAND.AFTER_RIVER_BETTING_ROUND:
       result = afterRiverBettingRound(game, players);
@@ -218,14 +219,15 @@ function dealCards(game, players) {
 /**
  * Steps 5, 7, 9, 11: Execute a betting round.
  *
- * In the skeleton, we simulate all players checking/calling through
- * to simplify. The real engine waits for player actions via WebSocket.
- * Candidates will extend this for their challenge option.
+ * Processes one player action per call. The acting player is indicated
+ * by game.move. If a playerAction is provided, it's applied to the acting
+ * player. If no action is provided, returns awaiting_action status.
+ *
+ * When the round is complete (all active players have matched the current
+ * bet), bets are collected and the hand advances to the next street.
  */
-function bettingRound(game, players, round) {
-  const activePlayers = players.filter(
-    (p) => p.status === PLAYER_STATUS.ACTIVE
-  );
+function bettingRound(game, players, round, playerAction) {
+  const { processAction } = require('../shared/games/common/betting');
 
   // Check if only one player remains (everyone else folded)
   const inHand = getPlayersInHand(players);
@@ -242,29 +244,62 @@ function bettingRound(game, players, round) {
     return { game, players };
   }
 
-  // Simulate: all active players check or call the current bet
-  for (const player of activePlayers) {
-    if (player.bet < game.currentBet) {
-      // Call
-      const callAmount = Math.min(game.currentBet - player.bet, player.stack);
-      player.stack = toMoney(player.stack - callAmount);
-      player.bet = toMoney(player.bet + callAmount);
-      player.totalBet = toMoney(player.totalBet + callAmount);
-      player.action = ACTION.CALL;
-      if (player.stack === 0) {
-        player.status = PLAYER_STATUS.ALL_IN;
-        player.action = ACTION.ALLIN;
-      }
-    } else {
-      player.action = ACTION.CHECK;
-    }
+  // If no player action provided, signal that we're waiting
+  if (!playerAction) {
+    return { game, players, awaiting: true };
   }
 
-  // Collect bets into pot
-  const collected = collectBets(game, players);
-  game = collected.game;
+  // Validate the action is for the correct seat
+  const actingSeat = game.move;
+  const actingPlayer = players.find(
+    (p) => p.seat === actingSeat && p.status === PLAYER_STATUS.ACTIVE
+  );
 
-  advanceToNextStreet(game, round);
+  if (!actingPlayer) {
+    // No valid acting player — skip ahead
+    const collected = collectBets(game, players);
+    game = collected.game;
+    advanceToNextStreet(game, round);
+    return { game, players };
+  }
+
+  if (playerAction.seat !== actingSeat) {
+    // Wrong seat — return error but don't change state
+    return { game, players, error: `Awaiting action from seat ${actingSeat}, got seat ${playerAction.seat}` };
+  }
+
+  // Apply the action
+  const action = playerAction.action;
+  const amount = playerAction.amount || 0;
+
+  // Track raise size for min-raise calculations
+  if (action === ACTION.RAISE || action === ACTION.BET) {
+    const raiseIncrease = amount - game.currentBet;
+    game.lastRaiseSize = raiseIncrease > 0 ? raiseIncrease : game.bigBlind;
+  }
+
+  processAction(game, actingPlayer, action, amount);
+
+  // Check if only one player remains after this action
+  const remainingInHand = getPlayersInHand(players);
+  if (remainingInHand.length <= 1) {
+    const collected = collectBets(game, players);
+    game = collected.game;
+    game.handStep = GAME_HAND.FIND_WINNERS;
+    return { game, players };
+  }
+
+  // Check if the betting round is complete
+  if (isBettingRoundComplete(players, game.currentBet)) {
+    const collected = collectBets(game, players);
+    game = collected.game;
+    advanceToNextStreet(game, round);
+    return { game, players };
+  }
+
+  // Advance to next active player
+  game.move = getNextSeat(players, actingSeat, game.maxSeats);
+
   return { game, players };
 }
 
