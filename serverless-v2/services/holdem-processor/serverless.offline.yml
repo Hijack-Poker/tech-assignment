@@ -55,6 +55,13 @@ functions:
           path: /table/{tableId}
           method: GET
 
+  resetTable:
+    handler: handler.resetTableHttp
+    events:
+      - httpApi:
+          path: /reset
+          method: POST
+
 plugins:
   - serverless-offline
 

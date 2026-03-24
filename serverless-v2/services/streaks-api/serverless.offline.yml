@@ -9,12 +9,27 @@ provider:
   region: us-east-1
   environment:
     STAGE: local
+    DYNAMODB_ENDPOINT: ${env:DYNAMODB_ENDPOINT, ''}
+    STREAKS_PLAYERS_TABLE: ${env:STREAKS_PLAYERS_TABLE, 'streaks-players'}
+    STREAKS_ACTIVITY_TABLE: ${env:STREAKS_ACTIVITY_TABLE, 'streaks-activity'}
+    STREAKS_REWARDS_TABLE: ${env:STREAKS_REWARDS_TABLE, 'streaks-rewards'}
+    STREAKS_FREEZE_HISTORY_TABLE: ${env:STREAKS_FREEZE_HISTORY_TABLE, 'streaks-freeze-history'}
+    STREAKS_MISSIONS_TABLE: ${env:STREAKS_MISSIONS_TABLE, 'streaks-missions'}
+    AWS_REGION: ${env:AWS_REGION, 'us-east-1'}
+    AWS_ACCESS_KEY_ID: ${env:AWS_ACCESS_KEY_ID, 'local'}
+    AWS_SECRET_ACCESS_KEY: ${env:AWS_SECRET_ACCESS_KEY, 'local'}
 
 functions:
   api:
     handler: handler.api
     events:
       - httpApi: '*'
+
+  scheduledFreezeConsumption:
+    handler: handler.scheduledFreezeConsumption
+    description: Auto-consume freezes for players who missed yesterday (runs 01:00 UTC)
+    events:
+      - schedule: cron(0 1 * * ? *)
 
 plugins:
   - serverless-offline
