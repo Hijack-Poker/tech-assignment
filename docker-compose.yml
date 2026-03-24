@@ -322,7 +322,10 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+        cd /app/shared && npm install
+        cd /app
+        npm install
+        npx serverless offline --config serverless.offline.yml --host 0.0.0.0
 
   rewards-frontend:
     image: node:22-alpine
