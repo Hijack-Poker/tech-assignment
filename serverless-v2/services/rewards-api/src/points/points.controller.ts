@@ -1,44 +1,33 @@
-import { Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
+import { PlayerId } from '../auth/player-id.decorator';
+import { AwardPointsDto } from './dto/award-points.dto';
+import { PointsService } from './points.service';
+import type { AwardPointsResponse, LeaderboardResponse } from '../../../../shared/types/rewards';
 
 @Controller('points')
 @UseGuards(AuthGuard)
 export class PointsController {
+  constructor(private readonly pointsService: PointsService) {}
+
   /**
    * POST /api/v1/points/award
    *
-   * Award points to a player. Candidates implement this.
-   *
-   * Expected body:
-   *   { playerId: string, points: number, reason: string }
-   *
-   * Expected response:
-   *   { playerId, newBalance, tier, transaction }
+   * Award points to a player after a completed hand.
    */
   @Post('award')
-  @HttpCode(HttpStatus.NOT_IMPLEMENTED)
-  awardPoints() {
-    return {
-      error: 'Not implemented',
-      message: 'Implement point awarding logic here. See challenge docs for requirements.',
-      hint: {
-        input: { playerId: 'string', points: 'number', reason: 'string' },
-        output: { playerId: 'string', newBalance: 'number', tier: 'string', transaction: 'object' },
-      },
-    };
+  awardPoints(@PlayerId() playerId: string, @Body() dto: AwardPointsDto): Promise<AwardPointsResponse> {
+    return this.pointsService.awardPoints(playerId, dto);
   }
 
   /**
    * GET /api/v1/points/leaderboard
    *
    * Get the points leaderboard. Candidates implement this.
-   *
-   * Expected response:
-   *   { leaderboard: [{ playerId, username, points, tier, rank }] }
    */
   @Get('leaderboard')
   @HttpCode(HttpStatus.NOT_IMPLEMENTED)
-  getLeaderboard() {
+  getLeaderboard(): LeaderboardResponse {
     return {
       error: 'Not implemented',
       message: 'Implement leaderboard query here. See challenge docs for requirements.',

@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { AppModule } from './src/app.module';
 import { NotFoundFilter } from './src/filters/not-found.filter';
@@ -26,6 +27,13 @@ async function bootstrap(): Promise<Handler> {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Player-Id'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
   app.useGlobalFilters(new NotFoundFilter());
 
   await app.init();

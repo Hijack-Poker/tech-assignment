@@ -6,13 +6,14 @@ import {
   UpdateCommand,
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { PlayerRecord, TransactionRecord } from '../../../../shared/types/rewards';
+import { PlayerRecord, TransactionRecord, NotificationRecord } from '../../../../shared/types/rewards';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { docClient } = require('../../../shared/config/dynamo');
 
 const PLAYERS_TABLE = process.env.REWARDS_PLAYERS_TABLE || 'rewards-players';
 const TRANSACTIONS_TABLE = process.env.REWARDS_TRANSACTIONS_TABLE || 'rewards-transactions';
+const NOTIFICATIONS_TABLE = process.env.REWARDS_NOTIFICATIONS_TABLE || 'rewards-notifications';
 
 @Injectable()
 export class DynamoService {
@@ -106,5 +107,17 @@ export class DynamoService {
       new ScanCommand({ TableName: PLAYERS_TABLE }),
     );
     return (result.Items as PlayerRecord[]) || [];
+  }
+
+  /**
+   * Write a notification record.
+   */
+  async addNotification(notification: NotificationRecord): Promise<void> {
+    await docClient.send(
+      new PutCommand({
+        TableName: NOTIFICATIONS_TABLE,
+        Item: notification,
+      }),
+    );
   }
 }

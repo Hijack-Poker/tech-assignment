@@ -311,11 +311,16 @@ services:
     depends_on:
       dynamodb-local:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       STAGE: local
       DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REWARDS_PLAYERS_TABLE: rewards-players
       REWARDS_TRANSACTIONS_TABLE: rewards-transactions
+      REWARDS_NOTIFICATIONS_TABLE: rewards-notifications
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
