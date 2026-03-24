@@ -1,54 +1,35 @@
 import { Controller, Get, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { PlayerId } from '../auth/player-id.decorator';
+import { PlayerService } from './player.service';
+import type { PlayerRewardsResponse, PlayerHistoryResponse } from '../../../../shared/types/rewards';
 
 @Controller('player')
 @UseGuards(AuthGuard)
 export class PlayerController {
+  constructor(private readonly playerService: PlayerService) {}
+
   /**
    * GET /api/v1/player/rewards
    *
-   * Get a player's rewards summary. Candidates implement this.
-   *
-   * Uses playerId from auth guard (X-Player-Id header).
-   *
-   * Expected response:
-   *   { playerId, tier, points, nextTierAt, recentTransactions: [...] }
+   * Get a player's rewards summary.
    */
   @Get('rewards')
-  @HttpCode(HttpStatus.NOT_IMPLEMENTED)
-  getRewards(@PlayerId() playerId: string) {
-    return {
-      error: 'Not implemented',
-      message: 'Implement player rewards lookup here. See challenge docs for requirements.',
-      hint: {
-        playerId,
-        output: {
-          playerId: 'string',
-          tier: 'string',
-          points: 'number',
-          nextTierAt: 'number',
-          recentTransactions: 'array',
-        },
-      },
-    };
+  getRewards(@PlayerId() playerId: string): Promise<PlayerRewardsResponse> {
+    return this.playerService.getRewards(playerId);
   }
 
   /**
    * GET /api/v1/player/history
    *
    * Get a player's point transaction history. Candidates implement this.
-   *
-   * Expected query: ?limit=20&offset=0
-   * Expected response:
-   *   { transactions: [{ timestamp, points, reason, balance }], total }
    */
   @Get('history')
   @HttpCode(HttpStatus.NOT_IMPLEMENTED)
-  getHistory() {
+  getHistory(): PlayerHistoryResponse {
     return {
       error: 'Not implemented',
       message: 'Implement transaction history here. See challenge docs for requirements.',
-    };
+    } as unknown as PlayerHistoryResponse;
   }
 }

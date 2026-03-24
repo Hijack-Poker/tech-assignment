@@ -31,6 +31,6 @@ export class PointsController {
     return {
       error: 'Not implemented',
       message: 'Implement leaderboard query here. See challenge docs for requirements.',
-    };
+    } as unknown as LeaderboardResponse;
   }
 }
