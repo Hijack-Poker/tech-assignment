@@ -1,41 +1,40 @@
-export interface Tier {
-  name: string;
-  minPoints: number;
-  multiplier: number;
-}
+import { TierDefinition, TierNumber, TierName } from '../../../shared/types/rewards';
 
-export interface PointRule {
-  points: number;
-  description: string;
-}
+export type { TierDefinition, TierNumber, TierName };
 
 /**
  * Rewards tier definitions.
  * Points thresholds for tier progression.
  */
-export const TIERS: Record<string, Tier> = {
-  BRONZE: { name: 'Bronze', minPoints: 0, multiplier: 1.0 },
-  SILVER: { name: 'Silver', minPoints: 500, multiplier: 1.25 },
-  GOLD: { name: 'Gold', minPoints: 2000, multiplier: 1.5 },
-  PLATINUM: { name: 'Platinum', minPoints: 10000, multiplier: 2.0 },
+export const TIERS: Record<string, TierDefinition> = {
+  BRONZE: { number: 1, name: 'Bronze', minPoints: 0, multiplier: 1.0 },
+  SILVER: { number: 2, name: 'Silver', minPoints: 500, multiplier: 1.25 },
+  GOLD: { number: 3, name: 'Gold', minPoints: 2000, multiplier: 1.5 },
+  PLATINUM: { number: 4, name: 'Platinum', minPoints: 10000, multiplier: 2.0 },
 };
 
 /**
- * Point award rules — how points are earned.
+ * Base points per hand by table stakes (big blind).
  */
-export const POINT_RULES: Record<string, PointRule> = {
-  HAND_PLAYED: { points: 1, description: 'Played a hand' },
-  HAND_WON: { points: 5, description: 'Won a hand' },
-  TOURNAMENT_ENTRY: { points: 10, description: 'Entered a tournament' },
-  TOURNAMENT_WIN: { points: 50, description: 'Won a tournament' },
-  DAILY_LOGIN: { points: 2, description: 'Daily login bonus' },
-  REFERRAL: { points: 100, description: 'Referred a friend' },
-};
+export const STAKES_POINTS: { maxBB: number; basePoints: number }[] = [
+  { maxBB: 0.25, basePoints: 1 },
+  { maxBB: 1.0, basePoints: 2 },
+  { maxBB: 5.0, basePoints: 5 },
+  { maxBB: Infinity, basePoints: 10 },
+];
 
 /**
- * Get tier for a given point total.
+ * Get base points for a given big blind amount.
  */
-export function getTierForPoints(points: number): Tier {
+export function getBasePointsForStakes(bigBlind: number): number {
+  const bracket = STAKES_POINTS.find((s) => bigBlind <= s.maxBB);
+  return bracket ? bracket.basePoints : 10;
+}
+
+/**
+ * Get tier definition for a given monthly point total.
+ */
+export function getTierForPoints(points: number): TierDefinition {
   const tiers = Object.values(TIERS).sort((a, b) => b.minPoints - a.minPoints);
   return tiers.find((t) => points >= t.minPoints) || TIERS.BRONZE;
 }
@@ -43,10 +42,26 @@ export function getTierForPoints(points: number): Tier {
 /**
  * Get the next tier above the current one (or null if at max).
  */
-export function getNextTier(currentTierName: string): Tier | null {
-  const tierOrder = ['Bronze', 'Silver', 'Gold', 'Platinum'];
+export function getNextTier(currentTierName: TierName): TierDefinition | null {
+  const tierOrder: TierName[] = ['Bronze', 'Silver', 'Gold', 'Platinum'];
   const currentIndex = tierOrder.indexOf(currentTierName);
   if (currentIndex === -1 || currentIndex === tierOrder.length - 1) return null;
   const nextName = tierOrder[currentIndex + 1];
   return Object.values(TIERS).find((t) => t.name === nextName) || null;
+}
+
+/**
+ * Convert tier number (DynamoDB) to tier name (API).
+ */
+export function tierNumberToName(tierNumber: TierNumber): TierName {
+  const tier = Object.values(TIERS).find((t) => t.number === tierNumber);
+  return tier ? tier.name : 'Bronze';
+}
+
+/**
+ * Convert tier name (API) to tier number (DynamoDB).
+ */
+export function tierNameToNumber(tierName: TierName): TierNumber {
+  const tier = Object.values(TIERS).find((t) => t.name === tierName);
+  return tier ? tier.number : 1;
 }

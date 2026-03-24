@@ -6,7 +6,7 @@ import {
   UpdateCommand,
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { Player, Transaction } from '../config/interfaces';
+import { PlayerRecord, TransactionRecord } from '../../../../shared/types/rewards';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { docClient } = require('../../../shared/config/dynamo');
@@ -19,20 +19,20 @@ export class DynamoService {
   /**
    * Get a player's rewards profile.
    */
-  async getPlayer(playerId: string): Promise<Player | null> {
+  async getPlayer(playerId: string): Promise<PlayerRecord | null> {
     const result = await docClient.send(
       new GetCommand({
         TableName: PLAYERS_TABLE,
         Key: { playerId },
       }),
     );
-    return (result.Item as Player) || null;
+    return (result.Item as PlayerRecord) || null;
   }
 
   /**
    * Create or update a player's rewards profile.
    */
-  async putPlayer(player: Player): Promise<void> {
+  async putPlayer(player: PlayerRecord): Promise<void> {
     await docClient.send(
       new PutCommand({
         TableName: PLAYERS_TABLE,
@@ -44,7 +44,7 @@ export class DynamoService {
   /**
    * Update specific attributes on a player record.
    */
-  async updatePlayer(playerId: string, updates: Partial<Omit<Player, 'playerId'>>): Promise<void> {
+  async updatePlayer(playerId: string, updates: Partial<Omit<PlayerRecord, 'playerId'>>): Promise<void> {
     const expressions: string[] = [];
     const names: Record<string, string> = {};
     const values: Record<string, unknown> = {};
@@ -69,7 +69,7 @@ export class DynamoService {
   /**
    * Record a point transaction.
    */
-  async addTransaction(playerId: string, transaction: Omit<Transaction, 'playerId' | 'timestamp'>): Promise<void> {
+  async addTransaction(playerId: string, transaction: Omit<TransactionRecord, 'playerId' | 'timestamp'>): Promise<void> {
     await docClient.send(
       new PutCommand({
         TableName: TRANSACTIONS_TABLE,
@@ -85,7 +85,7 @@ export class DynamoService {
   /**
    * Get a player's transaction history.
    */
-  async getTransactions(playerId: string, limit = 20): Promise<Transaction[]> {
+  async getTransactions(playerId: string, limit = 20): Promise<TransactionRecord[]> {
     const result = await docClient.send(
       new QueryCommand({
         TableName: TRANSACTIONS_TABLE,
@@ -95,16 +95,16 @@ export class DynamoService {
         Limit: limit,
       }),
     );
-    return (result.Items as Transaction[]) || [];
+    return (result.Items as TransactionRecord[]) || [];
   }
 
   /**
    * Get all players (for leaderboard).
    */
-  async getAllPlayers(): Promise<Player[]> {
+  async getAllPlayers(): Promise<PlayerRecord[]> {
     const result = await docClient.send(
       new ScanCommand({ TableName: PLAYERS_TABLE }),
     );
-    return (result.Items as Player[]) || [];
+    return (result.Items as PlayerRecord[]) || [];
   }
 }

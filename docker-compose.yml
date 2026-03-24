@@ -332,6 +332,7 @@ services:
     working_dir: /app
     volumes:
       - ./serverless-v2/services/rewards-frontend:/app
+      - ./serverless-v2/shared:/app/shared
     environment:
       VITE_API_URL: http://localhost:5000
     entrypoint: ["/bin/sh", "-c"]
