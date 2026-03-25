@@ -9,7 +9,7 @@ import {
   tierNumberToName,
   TIERS,
 } from '../config/constants';
-import type { AwardPointsResponse, TierNumber } from '../../../../shared/types/rewards';
+import type { AwardPointsResponse, LeaderboardEntry, LeaderboardResponse, TierNumber } from '../../../../shared/types/rewards';
 
 @Injectable()
 export class PointsService {
@@ -111,5 +111,30 @@ export class PointsService {
         tableStakes: dto.tableStakes,
       },
     };
+  }
+
+  /**
+   * Redis is the sole data source here — no DynamoDB fallback. Redis is a hard
+   * dependency across the platform (holdem-processor, cash-game-broadcast, etc.),
+   * so if it's down the entire game is down, not just the leaderboard. A separate
+   * DynamoDB fallback table would add complexity for a scenario that never occurs
+   * in isolation. If Redis data is ever lost, the rewards-players table contains
+   * monthlyPoints and can be used to rebuild the sorted set.
+   */
+  async getLeaderboard(playerId: string, limit: number, month?: string): Promise<LeaderboardResponse> {
+    const monthKey = month || new Date().toISOString().slice(0, 7);
+
+    const redisEntries = await this.redis.getTopPlayers(monthKey, limit);
+    const leaderboard: LeaderboardEntry[] = redisEntries.map((entry, i) => ({
+      rank: i + 1,
+      playerId: entry.playerId,
+      displayName: entry.playerId,
+      tier: getTierForPoints(entry.score).name,
+      monthlyPoints: entry.score,
+    }));
+
+    const playerRank = await this.redis.getPlayerRank(monthKey, playerId) ?? undefined;
+
+    return { leaderboard, playerRank };
   }
 }

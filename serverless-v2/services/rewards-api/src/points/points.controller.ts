@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Get, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { PlayerId } from '../auth/player-id.decorator';
 import { AwardPointsDto } from './dto/award-points.dto';
@@ -23,14 +23,14 @@ export class PointsController {
   /**
    * GET /api/v1/points/leaderboard
    *
-   * Get the points leaderboard. Candidates implement this.
+   * Get the points leaderboard.
    */
   @Get('leaderboard')
-  @HttpCode(HttpStatus.NOT_IMPLEMENTED)
-  getLeaderboard(): LeaderboardResponse {
-    return {
-      error: 'Not implemented',
-      message: 'Implement leaderboard query here. See challenge docs for requirements.',
-    } as unknown as LeaderboardResponse;
+  getLeaderboard(
+    @PlayerId() playerId: string,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+    @Query('month') month?: string,
+  ): Promise<LeaderboardResponse> {
+    return this.pointsService.getLeaderboard(playerId, limit, month);
   }
 }
