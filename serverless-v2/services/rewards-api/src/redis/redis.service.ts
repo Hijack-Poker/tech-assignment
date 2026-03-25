@@ -38,6 +38,22 @@ export class RedisService implements OnModuleInit {
     }
   }
 
+  async getPlayersAroundRank(monthKey: string, rank: number, above: number, below: number): Promise<{ playerId: string; score: number }[]> {
+    try {
+      const start = Math.max(0, rank - 1 - above);
+      const stop = rank - 1 + below;
+      const results: string[] = await redisClient.zrevrange(`leaderboard:${monthKey}`, start, stop, 'WITHSCORES');
+      const entries: { playerId: string; score: number }[] = [];
+      for (let i = 0; i < results.length; i += 2) {
+        entries.push({ playerId: results[i], score: Number(results[i + 1]) });
+      }
+      return entries;
+    } catch (err) {
+      this.logger.warn(`Failed to get nearby players: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
   async getPlayerRank(monthKey: string, playerId: string): Promise<number | null> {
     try {
       const rank: number | null = await redisClient.zrevrank(`leaderboard:${monthKey}`, playerId);

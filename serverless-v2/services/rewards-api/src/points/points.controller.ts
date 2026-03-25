@@ -30,7 +30,8 @@ export class PointsController {
     @PlayerId() playerId: string,
     @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
     @Query('month') month?: string,
+    @Query('view') view?: string,
   ): Promise<LeaderboardResponse> {
-    return this.pointsService.getLeaderboard(playerId, limit, month);
+    return this.pointsService.getLeaderboard(playerId, limit, month, view);
   }
 }

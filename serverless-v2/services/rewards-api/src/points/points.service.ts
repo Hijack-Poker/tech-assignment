@@ -121,19 +121,28 @@ export class PointsService {
    * in isolation. If Redis data is ever lost, the rewards-players table contains
    * monthlyPoints and can be used to rebuild the sorted set.
    */
-  async getLeaderboard(playerId: string, limit: number, month?: string): Promise<LeaderboardResponse> {
+  async getLeaderboard(playerId: string, limit: number, month?: string, view?: string): Promise<LeaderboardResponse> {
     const monthKey = month || new Date().toISOString().slice(0, 7);
+    const playerRank = await this.redis.getPlayerRank(monthKey, playerId) ?? undefined;
 
-    const redisEntries = await this.redis.getTopPlayers(monthKey, limit);
+    let redisEntries: { playerId: string; score: number }[];
+    let startRank: number;
+
+    if (view === 'nearby' && playerRank) {
+      redisEntries = await this.redis.getPlayersAroundRank(monthKey, playerRank, 5, 4);
+      startRank = Math.max(1, playerRank - 5);
+    } else {
+      redisEntries = await this.redis.getTopPlayers(monthKey, limit);
+      startRank = 1;
+    }
+
     const leaderboard: LeaderboardEntry[] = redisEntries.map((entry, i) => ({
-      rank: i + 1,
+      rank: startRank + i,
       playerId: entry.playerId,
       displayName: entry.playerId,
       tier: getTierForPoints(entry.score).name,
       monthlyPoints: entry.score,
     }));
-
-    const playerRank = await this.redis.getPlayerRank(monthKey, playerId) ?? undefined;
 
     return { leaderboard, playerRank };
   }
