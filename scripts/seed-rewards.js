@@ -13,12 +13,10 @@
 
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand } = require('@aws-sdk/lib-dynamodb');
-const Redis = require('ioredis');
+const { redisClient } = require('/shared/config/redis');
 
 const ENDPOINT = process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000';
 const REGION = process.env.AWS_REGION || 'us-east-1';
-const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 
 const client = new DynamoDBClient({
   region: REGION,
@@ -66,7 +64,7 @@ function randomInt(min, max) {
 }
 
 async function seed() {
-  const redisClient = new Redis({ host: REDIS_HOST, port: REDIS_PORT });
+  await redisClient.connect();
   const monthKey = new Date().toISOString().slice(0, 7);
 
   console.log(`Seeding rewards data to ${ENDPOINT} (month: ${monthKey})...`);
