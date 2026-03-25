@@ -34,11 +34,15 @@ export class PointsService {
     const basePoints = getBasePointsForStakes(dto.bigBlind);
 
     // Step 3: Apply tier multiplier
-    const tierDef = Object.values(TIERS).find((t) => t.number === player.currentTier);
+    const tierDef = Object.values(TIERS).find((t) => t.number === player.tier);
     const multiplier = tierDef ? tierDef.multiplier : 1.0;
     const earnedPoints = Math.round(basePoints * multiplier);
 
-    // Step 4: Write immutable transaction record
+    // Step 4: Compute new totals
+    const newPoints = player.points + earnedPoints;
+    const newTotalEarned = player.totalEarned + earnedPoints;
+
+    // Step 5: Write immutable transaction record
     const timestamp = Date.now();
     await this.dynamo.addTransaction(playerId, {
       type: 'gameplay',
@@ -49,25 +53,21 @@ export class PointsService {
       tableStakes: dto.tableStakes,
       monthKey,
       createdAt: now,
+      balanceAfter: newPoints,
     });
 
-    // Step 5: Increment player's monthly + lifetime points
-    const newMonthlyPoints = player.monthlyPoints + earnedPoints;
-    const newLifetimePoints = player.lifetimePoints + earnedPoints;
-
     const playerUpdates: Record<string, unknown> = {
-      monthlyPoints: newMonthlyPoints,
-      lifetimePoints: newLifetimePoints,
+      points: newPoints,
+      totalEarned: newTotalEarned,
       updatedAt: now,
     };
 
     // Step 6: Check for tier upgrade
-    const newTierDef = getTierForPoints(newMonthlyPoints);
-    const tierChanged = newTierDef.number > player.currentTier;
+    const newTierDef = getTierForPoints(newPoints);
+    const tierChanged = newTierDef.number > player.tier;
 
     if (tierChanged) {
-      playerUpdates.currentTier = newTierDef.number;
-      playerUpdates.lastTierChangeAt = now;
+      playerUpdates.tier = newTierDef.number;
     }
 
     await this.dynamo.updatePlayer(playerId, playerUpdates);
@@ -80,7 +80,7 @@ export class PointsService {
           notificationId: ulid(),
           type: 'tier_upgrade',
           title: `Upgraded to ${newTierDef.name}!`,
-          description: `Congratulations! You've reached ${newTierDef.name} tier with ${newMonthlyPoints} monthly points. Enjoy your ${newTierDef.multiplier}x point multiplier!`,
+          description: `Congratulations! You've reached ${newTierDef.name} tier with ${newPoints} points. Enjoy your ${newTierDef.multiplier}x point multiplier!`,
           dismissed: false,
           createdAt: now,
         });
@@ -90,16 +90,16 @@ export class PointsService {
     }
 
     // Step 8: Update Redis leaderboard (fire-and-forget)
-    this.redis.updateLeaderboard(monthKey, playerId, newMonthlyPoints);
+    this.redis.updateLeaderboard(monthKey, playerId, newPoints);
 
     // Step 9: Return response
-    const currentTierNumber = tierChanged ? newTierDef.number : player.currentTier;
+    const currentTierNumber = tierChanged ? newTierDef.number : player.tier;
 
     return {
       playerId,
       earnedPoints,
-      newMonthlyPoints,
-      newLifetimePoints,
+      newPoints,
+      newTotalEarned,
       tier: tierNumberToName(currentTierNumber as TierNumber),
       transaction: {
         timestamp,
@@ -109,6 +109,7 @@ export class PointsService {
         earnedPoints,
         tableId: dto.tableId,
         tableStakes: dto.tableStakes,
+        balanceAfter: newPoints,
       },
     };
   }
@@ -119,7 +120,7 @@ export class PointsService {
    * so if it's down the entire game is down, not just the leaderboard. A separate
    * DynamoDB fallback table would add complexity for a scenario that never occurs
    * in isolation. If Redis data is ever lost, the rewards-players table contains
-   * monthlyPoints and can be used to rebuild the sorted set.
+   * points and can be used to rebuild the sorted set.
    */
   async getLeaderboard(playerId: string, limit: number, month?: string, view?: string): Promise<LeaderboardResponse> {
     const monthKey = month || new Date().toISOString().slice(0, 7);
@@ -141,7 +142,7 @@ export class PointsService {
       playerId: entry.playerId,
       displayName: entry.playerId,
       tier: getTierForPoints(entry.score).name,
-      monthlyPoints: entry.score,
+      points: entry.score,
     }));
 
     return { leaderboard, playerRank };

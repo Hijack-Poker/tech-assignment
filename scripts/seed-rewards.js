@@ -13,9 +13,12 @@
 
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand } = require('@aws-sdk/lib-dynamodb');
+const Redis = require('ioredis');
 
 const ENDPOINT = process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000';
 const REGION = process.env.AWS_REGION || 'us-east-1';
+const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
+const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 
 const client = new DynamoDBClient({
   region: REGION,
@@ -27,10 +30,10 @@ const docClient = DynamoDBDocumentClient.from(client, {
 });
 
 const TIERS = [
-  { name: 'Bronze', minPoints: 0 },
-  { name: 'Silver', minPoints: 500 },
-  { name: 'Gold', minPoints: 2000 },
-  { name: 'Platinum', minPoints: 10000 },
+  { number: 1, name: 'Bronze', minPoints: 0 },
+  { number: 2, name: 'Silver', minPoints: 500 },
+  { number: 3, name: 'Gold', minPoints: 2000 },
+  { number: 4, name: 'Platinum', minPoints: 10000 },
 ];
 
 const NAMES = [
@@ -53,9 +56,9 @@ const REASONS = [
 
 function getTier(points) {
   for (let i = TIERS.length - 1; i >= 0; i--) {
-    if (points >= TIERS[i].minPoints) return TIERS[i].name;
+    if (points >= TIERS[i].minPoints) return TIERS[i].number;
   }
-  return 'Bronze';
+  return 1;
 }
 
 function randomInt(min, max) {
@@ -63,7 +66,10 @@ function randomInt(min, max) {
 }
 
 async function seed() {
-  console.log(`Seeding rewards data to ${ENDPOINT}...`);
+  const redisClient = new Redis({ host: REDIS_HOST, port: REDIS_PORT });
+  const monthKey = new Date().toISOString().slice(0, 7);
+
+  console.log(`Seeding rewards data to ${ENDPOINT} (month: ${monthKey})...`);
   let playerCount = 0;
   let txCount = 0;
 
@@ -91,13 +97,14 @@ async function seed() {
     );
     playerCount++;
 
+    // Populate Redis leaderboard
+    await redisClient.zadd(`leaderboard:${monthKey}`, points, playerId);
+
     // Insert 5-15 recent transactions
     const txCount_ = randomInt(5, 15);
     for (let j = 0; j < txCount_; j++) {
+      const earnedPoints = randomInt(1, 10);
       const reason = REASONS[randomInt(0, REASONS.length - 1)];
-      const txPoints = reason === 'tournament_win' ? randomInt(20, 50) :
-                       reason === 'referral' ? 100 :
-                       randomInt(1, 10);
 
       await docClient.send(
         new PutCommand({
@@ -105,9 +112,14 @@ async function seed() {
           Item: {
             playerId,
             timestamp: Date.now() - randomInt(0, 30 * 86400000) + j, // ensure unique
-            points: txPoints,
+            type: 'gameplay',
+            basePoints: earnedPoints,
+            multiplier: 1.0,
+            earnedPoints,
             reason,
-            balanceAfter: points - randomInt(0, txPoints * 5),
+            monthKey,
+            balanceAfter: points - randomInt(0, earnedPoints * 5),
+            createdAt: new Date(Date.now() - randomInt(0, 30 * 86400000)).toISOString(),
           },
         })
       );
@@ -115,6 +127,7 @@ async function seed() {
     }
   }
 
+  await redisClient.quit();
   console.log(`Seeded ${playerCount} players and ${txCount} transactions.`);
   console.log('Done!');
 }

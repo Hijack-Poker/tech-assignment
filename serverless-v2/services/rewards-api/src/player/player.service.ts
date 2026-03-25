@@ -18,7 +18,7 @@ export class PlayerService {
       throw new NotFoundException({ error: 'Not found', message: `Player ${playerId} not found` });
     }
 
-    const tierName = tierNumberToName(player.currentTier as TierNumber);
+    const tierName = tierNumberToName(player.tier as TierNumber);
     const nextTier = getNextTier(tierName);
     const { items: transactions } = await this.dynamo.getTransactions(playerId, 10);
 
@@ -31,13 +31,14 @@ export class PlayerService {
       tableId: t.tableId,
       tableStakes: t.tableStakes,
       reason: t.reason,
+      balanceAfter: t.balanceAfter,
     }));
 
     return {
       playerId,
       tier: tierName,
-      monthlyPoints: player.monthlyPoints,
-      lifetimePoints: player.lifetimePoints,
+      points: player.points,
+      totalEarned: player.totalEarned,
       nextTierAt: nextTier ? nextTier.minPoints : null,
       nextTierName: nextTier ? nextTier.name : null,
       recentTransactions,
@@ -69,6 +70,7 @@ export class PlayerService {
         tableId: t.tableId,
         tableStakes: t.tableStakes,
         reason: t.reason,
+        balanceAfter: t.balanceAfter,
       })),
       total,
       limit,

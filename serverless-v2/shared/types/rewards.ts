@@ -26,11 +26,12 @@ export type TransactionType = 'gameplay' | 'adjustment' | 'bonus';
 /** rewards-players table */
 export interface PlayerRecord {
   playerId: string;
-  currentTier: TierNumber;
-  monthlyPoints: number;
-  lifetimePoints: number;
-  tierFloor: TierNumber;
-  lastTierChangeAt: string;
+  username: string;
+  tier: TierNumber;
+  points: number;
+  totalEarned: number;
+  handsPlayed: number;
+  tournamentsPlayed: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,15 +49,7 @@ export interface TransactionRecord {
   monthKey: string;
   createdAt: string;
   reason?: string;
-}
-
-/** rewards-leaderboard table */
-export interface LeaderboardRecord {
-  monthKey: string;
-  playerId: string;
-  displayName: string;
-  tier: TierNumber;
-  monthlyPoints: number;
+  balanceAfter?: number;
 }
 
 /** rewards-notifications table */
@@ -101,8 +94,8 @@ export interface AdminTierOverrideBody {
 export interface AwardPointsResponse {
   playerId: string;
   earnedPoints: number;
-  newMonthlyPoints: number;
-  newLifetimePoints: number;
+  newPoints: number;
+  newTotalEarned: number;
   tier: TierName;
   transaction: TransactionResponse;
 }
@@ -117,14 +110,15 @@ export interface TransactionResponse {
   tableId?: number;
   tableStakes?: string;
   reason?: string;
+  balanceAfter?: number;
 }
 
 /** GET /api/v1/player/rewards response */
 export interface PlayerRewardsResponse {
   playerId: string;
   tier: TierName;
-  monthlyPoints: number;
-  lifetimePoints: number;
+  points: number;
+  totalEarned: number;
   nextTierAt: number | null;
   nextTierName: TierName | null;
   recentTransactions: TransactionResponse[];
@@ -144,7 +138,7 @@ export interface LeaderboardEntry {
   playerId: string;
   displayName: string;
   tier: TierName;
-  monthlyPoints: number;
+  points: number;
 }
 
 /** GET /api/v1/leaderboard response */
@@ -171,8 +165,6 @@ export interface NotificationsResponse {
 
 /** GET /admin/players/:playerId/rewards response */
 export interface AdminPlayerRewardsResponse extends PlayerRewardsResponse {
-  tierFloor: TierName;
-  lastTierChangeAt: string;
   createdAt: string;
   updatedAt: string;
 }
