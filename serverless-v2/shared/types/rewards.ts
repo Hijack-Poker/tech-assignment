@@ -135,7 +135,7 @@ export interface PlayerHistoryResponse {
   transactions: TransactionResponse[];
   total: number;
   limit: number;
-  offset: number;
+  cursor: string | null;
 }
 
 /** Single entry in leaderboard API responses */

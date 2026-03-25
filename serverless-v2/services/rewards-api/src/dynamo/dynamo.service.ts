@@ -8,6 +8,12 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { PlayerRecord, TransactionRecord, NotificationRecord } from '../../../../shared/types/rewards';
 
+/** Composite key for the rewards-transactions table. */
+interface TransactionKey {
+  playerId: string;
+  timestamp: number;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { docClient } = require('../../../shared/config/dynamo');
 
@@ -84,9 +90,13 @@ export class DynamoService {
   }
 
   /**
-   * Get a player's transaction history.
+   * Get a player's transaction history with cursor-based pagination.
    */
-  async getTransactions(playerId: string, limit = 20): Promise<TransactionRecord[]> {
+  async getTransactions(
+    playerId: string,
+    limit = 20,
+    cursor?: TransactionKey,
+  ): Promise<{ items: TransactionRecord[]; lastKey: TransactionKey | undefined }> {
     const result = await docClient.send(
       new QueryCommand({
         TableName: TRANSACTIONS_TABLE,
@@ -94,9 +104,28 @@ export class DynamoService {
         ExpressionAttributeValues: { ':pid': playerId },
         ScanIndexForward: false,
         Limit: limit,
+        ...(cursor && { ExclusiveStartKey: cursor }),
       }),
     );
-    return (result.Items as TransactionRecord[]) || [];
+    return {
+      items: (result.Items as TransactionRecord[]) || [],
+      lastKey: result.LastEvaluatedKey as TransactionKey | undefined,
+    };
+  }
+
+  /**
+   * Count a player's total transactions.
+   */
+  async countTransactions(playerId: string): Promise<number> {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TRANSACTIONS_TABLE,
+        KeyConditionExpression: 'playerId = :pid',
+        ExpressionAttributeValues: { ':pid': playerId },
+        Select: 'COUNT',
+      }),
+    );
+    return result.Count || 0;
   }
 
   /**

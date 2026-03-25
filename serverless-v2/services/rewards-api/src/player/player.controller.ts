@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, DefaultValuePipe, Get, ParseIntPipe, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { PlayerId } from '../auth/player-id.decorator';
 import { PlayerService } from './player.service';
@@ -22,14 +22,14 @@ export class PlayerController {
   /**
    * GET /api/v1/player/history
    *
-   * Get a player's point transaction history. Candidates implement this.
+   * Get a player's point transaction history.
    */
   @Get('history')
-  @HttpCode(HttpStatus.NOT_IMPLEMENTED)
-  getHistory(): PlayerHistoryResponse {
-    return {
-      error: 'Not implemented',
-      message: 'Implement transaction history here. See challenge docs for requirements.',
-    } as unknown as PlayerHistoryResponse;
+  getHistory(
+    @PlayerId() playerId: string,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('cursor') cursor?: string,
+  ): Promise<PlayerHistoryResponse> {
+    return this.playerService.getHistory(playerId, limit, cursor);
   }
 }
