@@ -137,10 +137,13 @@ export class PointsService {
       startRank = 1;
     }
 
+    // Batch-lookup usernames for display
+    const players = await this.dynamo.getPlayers(redisEntries.map((e) => e.playerId));
+
     const leaderboard: LeaderboardEntry[] = redisEntries.map((entry, i) => ({
       rank: startRank + i,
       playerId: entry.playerId,
-      displayName: entry.playerId,
+      displayName: players.get(entry.playerId)?.username || entry.playerId,
       tier: getTierForPoints(entry.score).name,
       points: entry.score,
     }));

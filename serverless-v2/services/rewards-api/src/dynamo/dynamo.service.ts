@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   PutCommand,
   GetCommand,
+  BatchGetCommand,
   QueryCommand,
   UpdateCommand,
   ScanCommand,
@@ -34,6 +35,33 @@ export class DynamoService {
       }),
     );
     return (result.Item as PlayerRecord) || null;
+  }
+
+  /**
+   * Batch-get multiple players by ID. Returns a map of playerId → PlayerRecord.
+   * DynamoDB limits BatchGetItem to 100 keys per request.
+   */
+  async getPlayers(playerIds: string[]): Promise<Map<string, PlayerRecord>> {
+    const map = new Map<string, PlayerRecord>();
+    if (playerIds.length === 0) return map;
+
+    const result = await docClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [PLAYERS_TABLE]: {
+            Keys: playerIds.map((id) => ({ playerId: id })),
+          },
+        },
+      }),
+    );
+
+    const items = result.Responses?.[PLAYERS_TABLE] as PlayerRecord[] | undefined;
+    if (items) {
+      for (const item of items) {
+        map.set(item.playerId, item);
+      }
+    }
+    return map;
   }
 
   /**
