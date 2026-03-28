@@ -63,7 +63,7 @@ export class PointsService {
     };
 
     // Step 6: Check for tier upgrade
-    const newTierDef = getTierForPoints(newPoints);
+    const newTierDef = getTierForPoints(newTotalEarned);
     const tierChanged = newTierDef.number > player.tier;
 
     if (tierChanged) {

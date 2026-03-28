@@ -332,6 +332,33 @@ services:
         npm install
         npx serverless offline --config serverless.offline.yml --host 0.0.0.0
 
+  rewards-seed:
+    image: node:22-alpine
+    profiles: [rewards]
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/rewards-api:/app
+      - ./serverless-v2/shared:/app/shared
+      - ./scripts:/scripts
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cd /app/shared && npm install --silent
+        cd /app && npm install --silent
+        NODE_PATH=/app/node_modules node /scripts/seed-rewards.js
+
   rewards-frontend:
     image: node:22-alpine
     profiles: [rewards]

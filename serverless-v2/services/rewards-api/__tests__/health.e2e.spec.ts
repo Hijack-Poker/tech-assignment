@@ -63,11 +63,11 @@ describe('Rewards API — Health (e2e)', () => {
     expect(res.body.error).toBe('Unauthorized');
   });
 
-  it('should return 501 for stub endpoints with auth', async () => {
+  it('should return 200 for leaderboard with auth', async () => {
     const res = await request(app.getHttpServer(), 'GET', '/api/v1/points/leaderboard', {
       'X-Player-Id': 'test-player',
     });
-    expect(res.status).toBe(501);
-    expect(res.body.error).toBe('Not implemented');
+    expect(res.status).toBe(200);
+    expect(res.body.leaderboard).toBeDefined();
   });
 });
