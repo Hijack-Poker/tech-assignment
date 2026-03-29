@@ -71,8 +71,9 @@ function AdjustPointsModal({ open, onClose, playerId, onSaved }: AdjustPointsMod
       });
       onSaved();
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save');
+    } catch (err) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message || 'Failed to save');
     } finally {
       setSaving(false);
     }
