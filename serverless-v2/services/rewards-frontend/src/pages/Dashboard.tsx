@@ -8,12 +8,13 @@ import type {
   PlayerRewardsResponse,
   TransactionResponse,
 } from '@shared/types/rewards';
-import { STAKES_OPTIONS, generateId } from '../constants';
+import { STAKES_OPTIONS, TIER_ORDER, TIER_THRESHOLDS, generateId } from '../constants';
 import apiClient from '../api/client';
 import PlayerCard from '../components/PlayerCard';
 import Leaderboard, { LeaderboardHandle } from '../components/Leaderboard';
 import ActivityFeed from '../components/ActivityFeed';
 import SimulationControls from '../components/SimulationControls';
+import AdjustPointsModal from '../components/AdjustPointsModal';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -22,6 +23,8 @@ function Dashboard() {
   const [playerData, setPlayerData] = useState<PlayerRewardsResponse | null>(null);
   const [simulationEnabled, setSimulationEnabled] = useState(false);
   const [newTransaction, setNewTransaction] = useState<TransactionResponse | undefined>();
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [adjustPlayerId, setAdjustPlayerId] = useState<string | null>(null);
   const leaderboardEntriesRef = useRef<LeaderboardEntry[]>([]);
   const leaderboardRef = useRef<LeaderboardHandle>(null);
 
@@ -48,13 +51,19 @@ function Dashboard() {
 
   // Handle points awarded (from Play Hand button)
   const handlePointsAwarded = useCallback((response: AwardPointsResponse) => {
-    setPlayerData((prev) =>
+    const tierIdx = TIER_ORDER.indexOf(response.tier);
+    const nextTierName = tierIdx < TIER_ORDER.length - 1 ? TIER_ORDER[tierIdx + 1] : null;
+    const nextTierAt = nextTierName ? TIER_THRESHOLDS[nextTierName] : null;
+
+    setPlayerData((prev: PlayerRewardsResponse | null) =>
       prev
         ? {
             ...prev,
             points: response.newPoints,
             totalEarned: response.newTotalEarned,
             tier: response.tier,
+            nextTierAt,
+            nextTierName,
           }
         : prev,
     );
@@ -73,6 +82,21 @@ function Dashboard() {
     }
     leaderboardEntriesRef.current = merged;
   }, []);
+
+  const openAdjustModal = useCallback((targetPlayerId: string) => {
+    setAdjustPlayerId(targetPlayerId);
+    setAdjustModalOpen(true);
+  }, []);
+
+  const handleAdjustSaved = useCallback(() => {
+    // Refresh player data and leaderboard
+    if (playerId) {
+      apiClient
+        .get<PlayerRewardsResponse>('/player/rewards')
+        .then(({ data }) => setPlayerData(data));
+    }
+    leaderboardRef.current?.refresh();
+  }, [playerId]);
 
   // Simulation: award points to random leaderboard players every 2.5s
   useEffect(() => {
@@ -145,12 +169,12 @@ function Dashboard() {
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 2, p: 2 }}>
         {/* Left panel — Player Card */}
         <Box sx={{ width: 320, flexShrink: 0 }}>
-          <PlayerCard player={playerData} onPointsAwarded={handlePointsAwarded} />
+          <PlayerCard player={playerData} onPointsAwarded={handlePointsAwarded} onAdjustPoints={() => openAdjustModal(playerId)} />
         </Box>
 
         {/* Center panel — Leaderboard */}
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Leaderboard ref={leaderboardRef} playerId={playerId} simulationActive={simulationEnabled} onLeaderboardUpdate={handleLeaderboardUpdate} />
+          <Leaderboard ref={leaderboardRef} playerId={playerId} simulationActive={simulationEnabled} onLeaderboardUpdate={handleLeaderboardUpdate} onPlayerClick={openAdjustModal} />
         </Box>
 
         {/* Right panel — Activity Feed */}
@@ -158,6 +182,15 @@ function Dashboard() {
           <ActivityFeed newTransaction={newTransaction} />
         </Box>
       </Box>
+
+      {adjustPlayerId && (
+        <AdjustPointsModal
+          open={adjustModalOpen}
+          onClose={() => setAdjustModalOpen(false)}
+          playerId={adjustPlayerId}
+          onSaved={handleAdjustSaved}
+        />
+      )}
     </Box>
   );
 }

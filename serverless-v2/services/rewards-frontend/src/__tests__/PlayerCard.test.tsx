@@ -24,10 +24,10 @@ const mockPlayer: PlayerRewardsResponse = {
   recentTransactions: [],
 };
 
-function renderCard(player = mockPlayer, onPointsAwarded = vi.fn()) {
+function renderCard(player = mockPlayer, onPointsAwarded = vi.fn(), onAdjustPoints = vi.fn()) {
   return render(
     <ThemeProvider theme={theme}>
-      <PlayerCard player={player} onPointsAwarded={onPointsAwarded} />
+      <PlayerCard player={player} onPointsAwarded={onPointsAwarded} onAdjustPoints={onAdjustPoints} />
     </ThemeProvider>,
   );
 }

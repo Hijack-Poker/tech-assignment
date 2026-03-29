@@ -3,12 +3,15 @@ import {
   Box,
   Button,
   Chip,
+  IconButton,
   LinearProgress,
   MenuItem,
   Paper,
   Select,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import TuneIcon from '@mui/icons-material/Tune';
 import type { PlayerRewardsResponse, AwardPointsResponse } from '@shared/types/rewards';
 import { TIER_COLORS, TIER_THRESHOLDS, TIER_ORDER, STAKES_OPTIONS, generateId } from '../constants';
 import apiClient from '../api/client';
@@ -16,9 +19,10 @@ import apiClient from '../api/client';
 interface PlayerCardProps {
   player: PlayerRewardsResponse;
   onPointsAwarded: (response: AwardPointsResponse) => void;
+  onAdjustPoints: () => void;
 }
 
-function PlayerCard({ player, onPointsAwarded }: PlayerCardProps) {
+function PlayerCard({ player, onPointsAwarded, onAdjustPoints }: PlayerCardProps) {
   const [stakesIndex, setStakesIndex] = useState(2);
   const [loading, setLoading] = useState(false);
 
@@ -63,9 +67,14 @@ function PlayerCard({ player, onPointsAwarded }: PlayerCardProps) {
             fontSize: '0.85rem',
           }}
         />
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
           {player.playerId}
         </Typography>
+        <Tooltip title="Adjust points">
+          <IconButton size="small" onClick={onAdjustPoints} sx={{ color: 'text.secondary' }}>
+            <TuneIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
 
       <Box>

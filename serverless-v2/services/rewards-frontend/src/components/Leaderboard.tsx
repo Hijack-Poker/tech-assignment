@@ -23,6 +23,7 @@ interface LeaderboardProps {
   playerId: string;
   simulationActive?: boolean;
   onLeaderboardUpdate: (top: LeaderboardEntry[], nearby: LeaderboardEntry[]) => void;
+  onPlayerClick?: (playerId: string) => void;
 }
 
 const tableStyles = { tableLayout: 'fixed' } as const;
@@ -39,10 +40,12 @@ function LeaderboardTable({
   entries,
   playerId,
   deltas,
+  onPlayerClick,
 }: {
   entries: LeaderboardEntry[];
   playerId: string;
   deltas: Record<string, number>;
+  onPlayerClick?: (playerId: string) => void;
 }) {
   return (
     <Table size="small" sx={tableStyles}>
@@ -61,11 +64,14 @@ function LeaderboardTable({
           return (
             <TableRow
               key={entry.playerId}
-              sx={
-                isCurrentPlayer
-                  ? { bgcolor: 'rgba(108, 99, 255, 0.15)' }
-                  : undefined
-              }
+              onClick={() => onPlayerClick?.(entry.playerId)}
+              sx={{
+                cursor: onPlayerClick ? 'pointer' : undefined,
+                '&:hover': onPlayerClick
+                  ? { bgcolor: 'rgba(255,255,255,0.04)' }
+                  : undefined,
+                ...(isCurrentPlayer && { bgcolor: 'rgba(108, 99, 255, 0.15)' }),
+              }}
             >
               <TableCell>
                 <Typography variant="body2" fontWeight={isCurrentPlayer ? 700 : 400}>
@@ -127,7 +133,7 @@ function LeaderboardTable({
 }
 
 const Leaderboard = forwardRef<LeaderboardHandle, LeaderboardProps>(
-  function Leaderboard({ playerId, simulationActive, onLeaderboardUpdate }, ref) {
+  function Leaderboard({ playerId, simulationActive, onLeaderboardUpdate, onPlayerClick }, ref) {
     const [topEntries, setTopEntries] = useState<LeaderboardEntry[]>([]);
     const [nearbyEntries, setNearbyEntries] = useState<LeaderboardEntry[]>([]);
     const [playerRank, setPlayerRank] = useState<number | undefined>();
@@ -190,7 +196,7 @@ const Leaderboard = forwardRef<LeaderboardHandle, LeaderboardProps>(
             Top 10
           </Typography>
           <TableContainer>
-            <LeaderboardTable entries={topEntries} playerId={playerId} deltas={deltas} />
+            <LeaderboardTable entries={topEntries} playerId={playerId} deltas={deltas} onPlayerClick={onPlayerClick} />
           </TableContainer>
 
           {!inTop10 && nearbyEntries.length > 0 && (
@@ -199,7 +205,7 @@ const Leaderboard = forwardRef<LeaderboardHandle, LeaderboardProps>(
                 My Rank
               </Typography>
               <TableContainer>
-                <LeaderboardTable entries={nearbyEntries} playerId={playerId} deltas={deltas} />
+                <LeaderboardTable entries={nearbyEntries} playerId={playerId} deltas={deltas} onPlayerClick={onPlayerClick} />
               </TableContainer>
             </Box>
           )}

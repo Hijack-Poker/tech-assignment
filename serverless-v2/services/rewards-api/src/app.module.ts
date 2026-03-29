@@ -3,8 +3,9 @@ import { DynamoModule } from './dynamo/dynamo.module';
 import { HealthModule } from './health/health.module';
 import { PointsModule } from './points/points.module';
 import { PlayerModule } from './player/player.module';
+import { DevModule } from './dev/dev.module';
 
 @Module({
-  imports: [DynamoModule, HealthModule, PointsModule, PlayerModule],
+  imports: [DynamoModule, HealthModule, PointsModule, PlayerModule, DevModule],
 })
 export class AppModule {}
