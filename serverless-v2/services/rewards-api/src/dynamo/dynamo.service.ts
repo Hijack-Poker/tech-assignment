@@ -7,7 +7,7 @@ import {
   UpdateCommand,
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { PlayerRecord, TransactionRecord, NotificationRecord } from '../../../../shared/types/rewards';
+import { PlayerRecord, TransactionRecord, NotificationRecord, TierHistoryRecord } from '../../../../shared/types/rewards';
 
 /** Composite key for the rewards-transactions table. */
 interface TransactionKey {
@@ -21,6 +21,7 @@ const { docClient } = require('../../../shared/config/dynamo');
 const PLAYERS_TABLE = process.env.REWARDS_PLAYERS_TABLE || 'rewards-players';
 const TRANSACTIONS_TABLE = process.env.REWARDS_TRANSACTIONS_TABLE || 'rewards-transactions';
 const NOTIFICATIONS_TABLE = process.env.REWARDS_NOTIFICATIONS_TABLE || 'rewards-notifications';
+const TIER_HISTORY_TABLE = process.env.REWARDS_TIER_HISTORY_TABLE || 'rewards-tier-history';
 
 @Injectable()
 export class DynamoService {
@@ -214,5 +215,36 @@ export class DynamoService {
         ConditionExpression: 'attribute_exists(playerId)',
       }),
     );
+  }
+
+  /**
+   * Write a tier history snapshot.
+   */
+  async putTierHistory(record: TierHistoryRecord): Promise<void> {
+    await docClient.send(
+      new PutCommand({
+        TableName: TIER_HISTORY_TABLE,
+        Item: record,
+      }),
+    );
+  }
+
+  /**
+   * Get tier history for a player (last N months).
+   */
+  async getTierHistory(playerId: string, months = 6): Promise<TierHistoryRecord[]> {
+    const fromDate = new Date();
+    fromDate.setMonth(fromDate.getMonth() - months);
+    const fromKey = fromDate.toISOString();
+
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TIER_HISTORY_TABLE,
+        KeyConditionExpression: 'playerId = :pid AND createdAt >= :from',
+        ExpressionAttributeValues: { ':pid': playerId, ':from': fromKey },
+        ScanIndexForward: true,
+      }),
+    );
+    return (result.Items as TierHistoryRecord[]) || [];
   }
 }

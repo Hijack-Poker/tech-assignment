@@ -276,4 +276,50 @@ describe('DynamoService', () => {
       await expect(service.dismissNotification('p1', 'nonexistent')).rejects.toThrow();
     });
   });
+
+  describe('putTierHistory', () => {
+    it('writes to tier history table', async () => {
+      mockSend.mockResolvedValue({});
+      const record = {
+        playerId: 'p1',
+        monthKey: '2026-03',
+        tier: 2 as const,
+        tierName: 'Silver' as const,
+        points: 600,
+        totalEarned: 1200,
+        reason: 'monthly_reset' as const,
+        createdAt: '2026-04-01T00:00:00Z',
+      };
+
+      await service.putTierHistory(record);
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.TableName).toBe('rewards-tier-history');
+      expect(command.input.Item).toEqual(record);
+    });
+  });
+
+  describe('getTierHistory', () => {
+    it('queries with correct key condition', async () => {
+      const items = [
+        { playerId: 'p1', monthKey: '2026-01', tier: 1 },
+        { playerId: 'p1', monthKey: '2026-02', tier: 2 },
+      ];
+      mockSend.mockResolvedValue({ Items: items });
+
+      const result = await service.getTierHistory('p1', 6);
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.TableName).toBe('rewards-tier-history');
+      expect(command.input.ScanIndexForward).toBe(true);
+      expect(command.input.KeyConditionExpression).toBe('playerId = :pid AND createdAt >= :from');
+      expect(result).toEqual(items);
+    });
+
+    it('returns empty array when no history', async () => {
+      mockSend.mockResolvedValue({});
+      const result = await service.getTierHistory('p1');
+      expect(result).toEqual([]);
+    });
+  });
 });

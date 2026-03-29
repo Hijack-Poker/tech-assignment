@@ -15,6 +15,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import type { PlayerRewardsResponse, AwardPointsResponse } from '@shared/types/rewards';
 import { TIER_COLORS, TIER_THRESHOLDS, TIER_ORDER, STAKES_OPTIONS, generateId } from '../constants';
 import apiClient from '../api/client';
+import TierTimeline from './TierTimeline';
 
 interface PlayerCardProps {
   player: PlayerRewardsResponse;
@@ -52,7 +53,7 @@ function PlayerCard({ player, onPointsAwarded, onAdjustPoints }: PlayerCardProps
   };
 
   return (
-    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', gap: 2.5, overflow: 'auto' }}>
       <Typography variant="h6" fontWeight={700}>
         Player Card
       </Typography>
@@ -124,6 +125,13 @@ function PlayerCard({ player, onPointsAwarded, onAdjustPoints }: PlayerCardProps
             {(nextThreshold - player.totalEarned).toLocaleString()} pts to {player.nextTierName}
           </Typography>
         )}
+      </Box>
+
+      <Box>
+        <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          Tier History
+        </Typography>
+        <TierTimeline playerId={player.playerId} refreshKey={player.totalEarned} currentTier={player.tier} currentPoints={player.points} />
       </Box>
 
       <Box sx={{ mt: 'auto' }}>

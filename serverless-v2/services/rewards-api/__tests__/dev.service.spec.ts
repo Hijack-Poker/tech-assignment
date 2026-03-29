@@ -38,6 +38,10 @@ describe('DevService', () => {
       countTransactions: jest.fn(),
       getAllPlayers: jest.fn(),
       addNotification: jest.fn(),
+      getNotifications: jest.fn(),
+      dismissNotification: jest.fn(),
+      putTierHistory: jest.fn(),
+      getTierHistory: jest.fn(),
     } as unknown as jest.Mocked<DynamoService>;
 
     redis = {
@@ -87,7 +91,6 @@ describe('DevService', () => {
     });
 
     it('updates points and totalEarned on player', async () => {
-      // First call: setPlayerPoints lookup, second call: getPlayerRewards after update
       dynamo.getPlayer
         .mockResolvedValueOnce(makePlayer())
         .mockResolvedValueOnce(makePlayer({ points: 5000, totalEarned: 10000, tier: 4 }));
@@ -110,7 +113,6 @@ describe('DevService', () => {
 
       await service.setPlayerPoints('p1', 10000, 10000);
 
-      // Verify tier 4 (Platinum) was set since totalEarned = 10000
       expect(dynamo.updatePlayer).toHaveBeenCalledWith('p1', expect.objectContaining({ tier: 4 }));
     });
 
@@ -128,7 +130,7 @@ describe('DevService', () => {
         'p1',
         expect.objectContaining({
           type: 'adjustment',
-          earnedPoints: 400, // 500 - 100
+          earnedPoints: 400,
           reason: 'test_reason',
           balanceAfter: 500,
         }),
@@ -168,6 +170,40 @@ describe('DevService', () => {
       );
     });
 
+    it('calls putTierHistory when tier changes', async () => {
+      dynamo.getPlayer
+        .mockResolvedValueOnce(makePlayer({ tier: 1, points: 100, totalEarned: 400 }))
+        .mockResolvedValueOnce(makePlayer({ tier: 4, points: 10000, totalEarned: 10000 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+      dynamo.putTierHistory.mockResolvedValue();
+      dynamo.getTransactions.mockResolvedValue({ items: [], lastKey: undefined });
+
+      await service.setPlayerPoints('p1', 10000, 10000);
+
+      expect(dynamo.putTierHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          playerId: 'p1',
+          tier: 4,
+          tierName: 'Platinum',
+          reason: 'tier_change',
+        }),
+      );
+    });
+
+    it('does not call putTierHistory when tier stays the same', async () => {
+      dynamo.getPlayer
+        .mockResolvedValueOnce(makePlayer({ tier: 1, points: 100, totalEarned: 200 }))
+        .mockResolvedValueOnce(makePlayer({ tier: 1, points: 200, totalEarned: 300 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+      dynamo.getTransactions.mockResolvedValue({ items: [], lastKey: undefined });
+
+      await service.setPlayerPoints('p1', 200, 300);
+
+      expect(dynamo.putTierHistory).not.toHaveBeenCalled();
+    });
+
     it('sets Bronze tier for low totalEarned', async () => {
       dynamo.getPlayer
         .mockResolvedValueOnce(makePlayer({ tier: 3 }))
@@ -179,6 +215,40 @@ describe('DevService', () => {
       await service.setPlayerPoints('p1', 50, 50);
 
       expect(dynamo.updatePlayer).toHaveBeenCalledWith('p1', expect.objectContaining({ tier: 1 }));
+    });
+  });
+
+  describe('getTierHistory', () => {
+    it('returns formatted timeline', async () => {
+      dynamo.getTierHistory.mockResolvedValue([
+        {
+          playerId: 'p1',
+          monthKey: '2026-01',
+          tier: 1,
+          tierName: 'Bronze',
+          points: 100,
+          totalEarned: 100,
+          reason: 'monthly_reset',
+          createdAt: '2026-02-01T00:00:00Z',
+        },
+        {
+          playerId: 'p1',
+          monthKey: '2026-02',
+          tier: 2,
+          tierName: 'Silver',
+          points: 600,
+          totalEarned: 700,
+          reason: 'monthly_reset',
+          createdAt: '2026-03-01T00:00:00Z',
+        },
+      ]);
+
+      const result = await service.getTierHistory('p1');
+      expect(result.playerId).toBe('p1');
+      expect(result.history).toHaveLength(2);
+      expect(result.history[0].tier).toBe('Bronze');
+      expect(result.history[1].tier).toBe('Silver');
+      expect(result.history[0]).not.toHaveProperty('playerId');
     });
   });
 });

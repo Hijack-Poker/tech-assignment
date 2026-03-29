@@ -1,15 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DynamoService } from '../dynamo/dynamo.service';
 import { RedisService } from '../redis/redis.service';
 import { getTierForPoints, tierNumberToName, getNextTier } from '../config/constants';
 import type {
   TierNumber,
   PlayerRewardsResponse,
+  TierTimelineResponse,
   TransactionResponse,
 } from '../../../../shared/types/rewards';
 
 @Injectable()
 export class DevService {
+  private readonly logger = new Logger(DevService.name);
+
   constructor(
     private readonly dynamo: DynamoService,
     private readonly redis: RedisService,
@@ -77,6 +80,24 @@ export class DevService {
       balanceAfter: points,
     });
 
+    // Record tier history if tier changed
+    if (newTierDef.number !== player.tier) {
+      try {
+        await this.dynamo.putTierHistory({
+          playerId,
+          monthKey,
+          tier: newTierDef.number,
+          tierName: newTierDef.name,
+          points,
+          totalEarned,
+          reason: 'tier_change',
+          createdAt: now,
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to record tier history: ${(err as Error).message}`);
+      }
+    }
+
     // Update player record
     await this.dynamo.updatePlayer(playerId, {
       points,
@@ -89,5 +110,21 @@ export class DevService {
     this.redis.updateLeaderboard(monthKey, playerId, points);
 
     return this.getPlayerRewards(playerId);
+  }
+
+  async getTierHistory(playerId: string): Promise<TierTimelineResponse> {
+    const records = await this.dynamo.getTierHistory(playerId, 6);
+
+    return {
+      playerId,
+      history: records.map((r) => ({
+        monthKey: r.monthKey,
+        tier: r.tierName,
+        points: r.points,
+        totalEarned: r.totalEarned,
+        reason: r.reason,
+        createdAt: r.createdAt,
+      })),
+    };
   }
 }

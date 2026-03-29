@@ -108,6 +108,16 @@ services:
           --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
           2>/dev/null || true
 
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name rewards-tier-history \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=createdAt,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=createdAt,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
         # Streaks tables
         aws dynamodb create-table \
           --endpoint-url http://dynamodb-local:8000 \
@@ -321,6 +331,7 @@ services:
       REWARDS_PLAYERS_TABLE: rewards-players
       REWARDS_TRANSACTIONS_TABLE: rewards-transactions
       REWARDS_NOTIFICATIONS_TABLE: rewards-notifications
+      REWARDS_TIER_HISTORY_TABLE: rewards-tier-history
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
@@ -363,13 +374,11 @@ services:
     image: node:22-alpine
     profiles: [rewards]
     ports:
-      - "${REWARDS_FRONTEND_PORT:-4000}:4000"
+      - "127.0.0.1:${REWARDS_FRONTEND_PORT:-4000}:4000"
     working_dir: /app
     volumes:
       - ./serverless-v2/services/rewards-frontend:/app
       - ./serverless-v2/shared:/app/shared
-    environment:
-      VITE_API_URL: http://localhost:5000
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

@@ -98,6 +98,32 @@ async function seed() {
     // Populate Redis leaderboard
     await redisClient.zadd(`leaderboard:${monthKey}`, points, playerId);
 
+    // Generate 6 months of tier history
+    for (let m = 5; m >= 0; m--) {
+      const histDate = new Date();
+      histDate.setMonth(histDate.getMonth() - m);
+      const histMonthKey = histDate.toISOString().slice(0, 7);
+      const histPoints = Math.max(0, points - randomInt(0, 500) * m);
+      const histTier = getTier(histPoints);
+      const tierNames = { 1: 'Bronze', 2: 'Silver', 3: 'Gold', 4: 'Platinum' };
+
+      await docClient.send(
+        new PutCommand({
+          TableName: 'rewards-tier-history',
+          Item: {
+            playerId,
+            monthKey: histMonthKey,
+            tier: histTier,
+            tierName: tierNames[histTier],
+            points: histPoints,
+            totalEarned: histPoints + randomInt(0, 3000),
+            reason: 'monthly_reset',
+            createdAt: histDate.toISOString(),
+          },
+        })
+      );
+    }
+
     // Insert 5-15 recent transactions
     const txCount_ = randomInt(5, 15);
     for (let j = 0; j < txCount_; j++) {

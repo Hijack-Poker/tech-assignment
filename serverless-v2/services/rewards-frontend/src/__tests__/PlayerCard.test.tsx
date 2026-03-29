@@ -8,6 +8,7 @@ import type { PlayerRewardsResponse } from '@shared/types/rewards';
 
 vi.mock('../api/client', () => ({
   default: {
+    get: vi.fn().mockResolvedValue({ data: { playerId: 'player-001', history: [] } }),
     post: vi.fn(),
   },
 }));

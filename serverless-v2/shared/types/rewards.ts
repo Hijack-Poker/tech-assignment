@@ -174,3 +174,39 @@ export interface AdminPlayerRewardsResponse extends PlayerRewardsResponse {
 export interface AdminLeaderboardEntry extends LeaderboardEntry {
   playerId: string;
 }
+
+// ─── Tier History ───────────────────────────────────────────────────
+
+/** rewards-tier-history table */
+export interface TierHistoryRecord {
+  playerId: string;
+  monthKey: string;
+  tier: TierNumber;
+  tierName: TierName;
+  points: number;
+  totalEarned: number;
+  reason: 'monthly_reset' | 'tier_override' | 'tier_change' | 'initial';
+  createdAt: string;
+}
+
+export interface TierHistoryEntry {
+  monthKey: string;
+  tier: TierName;
+  points: number;
+  totalEarned: number;
+  reason: string;
+  createdAt: string;
+}
+
+/** GET /dev/tier-history/:playerId response */
+export interface TierTimelineResponse {
+  playerId: string;
+  history: TierHistoryEntry[];
+}
+
+/** POST /dev/monthly-reset response */
+export interface MonthlyResetResponse {
+  processed: number;
+  downgrades: number;
+  resetMonth: string;
+}

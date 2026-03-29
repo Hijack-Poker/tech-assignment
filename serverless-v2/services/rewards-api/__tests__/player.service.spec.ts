@@ -54,6 +54,8 @@ describe('PlayerService', () => {
       addNotification: jest.fn(),
       getNotifications: jest.fn(),
       dismissNotification: jest.fn(),
+      putTierHistory: jest.fn(),
+      getTierHistory: jest.fn(),
     } as unknown as jest.Mocked<DynamoService>;
 
     service = new PlayerService(dynamo);

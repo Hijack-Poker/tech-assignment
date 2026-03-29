@@ -41,6 +41,8 @@ describe('PointsService', () => {
       addNotification: jest.fn(),
       getNotifications: jest.fn(),
       dismissNotification: jest.fn(),
+      putTierHistory: jest.fn(),
+      getTierHistory: jest.fn(),
     } as unknown as jest.Mocked<DynamoService>;
 
     redis = {
@@ -98,11 +100,20 @@ describe('PointsService', () => {
       dynamo.addTransaction.mockResolvedValue();
       dynamo.updatePlayer.mockResolvedValue();
       dynamo.addNotification.mockResolvedValue();
+      dynamo.putTierHistory.mockResolvedValue();
 
       const result = await service.awardPoints('p1', { ...defaultDto, bigBlind: 2.0 });
       // Gold multiplier 1.5, base 5 → earned 8, totalEarned 10003
       expect(result.tier).toBe('Platinum');
       expect(dynamo.updatePlayer).toHaveBeenCalledWith('p1', expect.objectContaining({ tier: 4 }));
+      expect(dynamo.putTierHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          playerId: 'p1',
+          tier: 4,
+          tierName: 'Platinum',
+          reason: 'tier_change',
+        }),
+      );
     });
 
     it('creates notification on tier upgrade', async () => {
@@ -130,6 +141,7 @@ describe('PointsService', () => {
       const result = await service.awardPoints('p1', { ...defaultDto, bigBlind: 0.1 });
       expect(result.tier).toBe('Bronze');
       expect(dynamo.addNotification).not.toHaveBeenCalled();
+      expect(dynamo.putTierHistory).not.toHaveBeenCalled();
     });
 
     it('does not downgrade tier when totalEarned still qualifies', async () => {
@@ -148,6 +160,7 @@ describe('PointsService', () => {
       dynamo.addTransaction.mockResolvedValue();
       dynamo.updatePlayer.mockResolvedValue();
       dynamo.addNotification.mockResolvedValue();
+      dynamo.putTierHistory.mockResolvedValue();
 
       const result = await service.awardPoints('p1', { ...defaultDto, bigBlind: 0.1 });
       expect(result.tier).toBe('Bronze');
@@ -156,6 +169,14 @@ describe('PointsService', () => {
         expect.objectContaining({
           type: 'tier_downgrade',
           title: expect.stringContaining('Bronze'),
+        }),
+      );
+      expect(dynamo.putTierHistory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          playerId: 'p1',
+          tier: 1,
+          tierName: 'Bronze',
+          reason: 'tier_change',
         }),
       );
     });
@@ -326,13 +347,26 @@ describe('PointsService', () => {
       expect(result.leaderboard[0].displayName).toBe('p1');
     });
 
-    it('calculates tier from score', async () => {
+    it('falls back to score-based tier when player record missing', async () => {
       redis.getPlayerRank.mockResolvedValue(1);
       redis.getTopPlayers.mockResolvedValue([{ playerId: 'p1', score: 10000 }]);
       dynamo.getPlayers.mockResolvedValue(new Map());
 
       const result = await service.getLeaderboard('p1', 10);
       expect(result.leaderboard[0].tier).toBe('Platinum');
+    });
+
+    it('uses stored tier from player record, not score', async () => {
+      redis.getPlayerRank.mockResolvedValue(1);
+      // Score is 0 (post-reset) but stored tier is Gold (3)
+      redis.getTopPlayers.mockResolvedValue([{ playerId: 'p1', score: 0 }]);
+      dynamo.getPlayers.mockResolvedValue(
+        new Map([['p1', makePlayer({ playerId: 'p1', tier: 3 })]]),
+      );
+
+      const result = await service.getLeaderboard('p1', 10);
+      // Should show Gold (stored), not Bronze (from score 0)
+      expect(result.leaderboard[0].tier).toBe('Gold');
     });
 
     it('includes playerRank in response', async () => {

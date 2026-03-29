@@ -16,6 +16,7 @@ import ActivityFeed from '../components/ActivityFeed';
 import SimulationControls from '../components/SimulationControls';
 import AdjustPointsModal from '../components/AdjustPointsModal';
 import NotificationBell, { NotificationBellHandle } from '../components/NotificationBell';
+import DevPanel from '../components/DevPanel';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -92,15 +93,19 @@ function Dashboard() {
     setAdjustModalOpen(true);
   }, []);
 
-  const handleAdjustSaved = useCallback(() => {
-    // Refresh player data and leaderboard
+  const refreshAll = useCallback(() => {
     if (playerId) {
       apiClient
         .get<PlayerRewardsResponse>('/player/rewards')
         .then(({ data }) => setPlayerData(data));
     }
     leaderboardRef.current?.refresh();
+    notificationBellRef.current?.refresh();
   }, [playerId]);
+
+  const handleAdjustSaved = useCallback(() => {
+    refreshAll();
+  }, [refreshAll]);
 
   // Simulation: award points to random leaderboard players every 2.5s
   useEffect(() => {
@@ -198,6 +203,8 @@ function Dashboard() {
           onSaved={handleAdjustSaved}
         />
       )}
+
+      <DevPanel onResetComplete={refreshAll} />
     </Box>
   );
 }

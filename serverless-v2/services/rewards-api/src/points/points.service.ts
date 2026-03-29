@@ -10,7 +10,7 @@ import {
   checkMilestones,
   TIERS,
 } from '../config/constants';
-import type { AwardPointsResponse, LeaderboardEntry, LeaderboardResponse, TierNumber } from '../../../../shared/types/rewards';
+import type { AwardPointsResponse, LeaderboardEntry, LeaderboardResponse, TierName, TierNumber } from '../../../../shared/types/rewards';
 
 @Injectable()
 export class PointsService {
@@ -78,7 +78,24 @@ export class PointsService {
 
     await this.dynamo.updatePlayer(playerId, playerUpdates);
 
-    // Step 8: Create notification on tier change
+    // Step 8: Create notification + tier history on tier change
+    if (tierUpgraded || tierDowngraded) {
+      try {
+        await this.dynamo.putTierHistory({
+          playerId,
+          monthKey,
+          tier: newTierDef.number,
+          tierName: newTierDef.name,
+          points: newPoints,
+          totalEarned: newTotalEarned,
+          reason: 'tier_change',
+          createdAt: now,
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to record tier history: ${(err as Error).message}`);
+      }
+    }
+
     if (tierUpgraded) {
       try {
         await this.dynamo.addNotification({
@@ -179,13 +196,16 @@ export class PointsService {
     // Batch-lookup usernames for display
     const players = await this.dynamo.getPlayers(redisEntries.map((e) => e.playerId));
 
-    const leaderboard: LeaderboardEntry[] = redisEntries.map((entry, i) => ({
-      rank: startRank + i,
-      playerId: entry.playerId,
-      displayName: players.get(entry.playerId)?.username || entry.playerId,
-      tier: getTierForPoints(entry.score).name,
-      points: entry.score,
-    }));
+    const leaderboard: LeaderboardEntry[] = redisEntries.map((entry, i) => {
+      const player = players.get(entry.playerId);
+      return {
+        rank: startRank + i,
+        playerId: entry.playerId,
+        displayName: player?.username || entry.playerId,
+        tier: player ? tierNumberToName(player.tier as TierNumber) : getTierForPoints(entry.score).name as TierName,
+        points: entry.score,
+      };
+    });
 
     return { leaderboard, playerRank };
   }
