@@ -26,17 +26,16 @@ function entryLabel(entry: TierHistoryEntry): string {
 
 function TierTimeline({ playerId, refreshKey, currentTier, currentPoints }: TierTimelineProps) {
   const [history, setHistory] = useState<TierHistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState(false);
 
   const fetchHistory = useCallback(() => {
-    setLoading(true);
     setError(false);
     apiClient
       .get<TierTimelineResponse>(`/dev/tier-history/${playerId}`)
       .then(({ data }) => setHistory(data.history))
       .catch(() => setError(true))
-      .finally(() => setLoading(false));
+      .finally(() => setInitialLoading(false));
   }, [playerId]);
 
   useEffect(() => {
@@ -56,7 +55,7 @@ function TierTimeline({ playerId, refreshKey, currentTier, currentPoints }: Tier
     return [...history, liveEntry];
   })();
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <Box display="flex" justifyContent="center" py={2}>
         <CircularProgress size={24} />

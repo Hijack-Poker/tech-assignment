@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Snackbar,
 } from '@mui/material';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import type { MonthlyResetResponse } from '@shared/types/rewards';
@@ -50,17 +51,6 @@ function MonthlyResetButton({ onResetComplete }: MonthlyResetButtonProps) {
         Monthly Reset
       </Button>
 
-      {result && (
-        <Alert severity="success" sx={{ mt: 1 }} onClose={() => setResult(null)}>
-          Reset complete. {result.processed} players processed, {result.downgrades} tier downgrades.
-        </Alert>
-      )}
-      {error && (
-        <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
         <DialogTitle>Trigger Monthly Reset</DialogTitle>
         <DialogContent>
@@ -78,6 +68,17 @@ function MonthlyResetButton({ onResetComplete }: MonthlyResetButtonProps) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar open={!!result} autoHideDuration={5000} onClose={() => setResult(null)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <Alert severity="success" onClose={() => setResult(null)} variant="filled">
+          Reset complete. {result?.processed} players processed, {result?.downgrades} tier downgrades.
+        </Alert>
+      </Snackbar>
+      <Snackbar open={!!error} autoHideDuration={5000} onClose={() => setError(null)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <Alert severity="error" onClose={() => setError(null)} variant="filled">
+          {error}
+        </Alert>
+      </Snackbar>
     </>
   );
 }

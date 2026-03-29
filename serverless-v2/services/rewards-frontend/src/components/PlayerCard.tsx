@@ -122,19 +122,14 @@ function PlayerCard({ player, onPointsAwarded, onAdjustPoints }: PlayerCardProps
         />
         {nextThreshold && (
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-            {(nextThreshold - player.totalEarned).toLocaleString()} pts to {player.nextTierName}
+            {player.totalEarned >= nextThreshold
+              ? `Play a hand to re-promote to ${player.nextTierName}`
+              : `${(nextThreshold - player.totalEarned).toLocaleString()} pts to ${player.nextTierName}`}
           </Typography>
         )}
       </Box>
 
       <Box>
-        <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
-          Tier History
-        </Typography>
-        <TierTimeline playerId={player.playerId} refreshKey={player.totalEarned} currentTier={player.tier} currentPoints={player.points} />
-      </Box>
-
-      <Box sx={{ mt: 'auto' }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Stakes
         </Typography>
@@ -161,6 +156,13 @@ function PlayerCard({ player, onPointsAwarded, onAdjustPoints }: PlayerCardProps
         >
           {loading ? 'Dealing...' : 'Play Hand'}
         </Button>
+      </Box>
+
+      <Box>
+        <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          Tier History
+        </Typography>
+        <TierTimeline playerId={player.playerId} refreshKey={player.totalEarned} currentTier={player.tier} currentPoints={player.points} />
       </Box>
     </Paper>
   );

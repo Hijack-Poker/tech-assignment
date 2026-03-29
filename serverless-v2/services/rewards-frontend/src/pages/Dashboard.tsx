@@ -16,7 +16,7 @@ import ActivityFeed from '../components/ActivityFeed';
 import SimulationControls from '../components/SimulationControls';
 import AdjustPointsModal from '../components/AdjustPointsModal';
 import NotificationBell, { NotificationBellHandle } from '../components/NotificationBell';
-import DevPanel from '../components/DevPanel';
+import MonthlyResetButton from '../components/MonthlyResetButton';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -174,6 +174,7 @@ function Dashboard() {
         <Box display="flex" alignItems="center" gap={1}>
           <NotificationBell ref={notificationBellRef} />
           <SimulationControls enabled={simulationEnabled} onToggle={setSimulationEnabled} />
+          <MonthlyResetButton onResetComplete={refreshAll} />
         </Box>
       </Box>
 
@@ -204,7 +205,6 @@ function Dashboard() {
         />
       )}
 
-      <DevPanel onResetComplete={refreshAll} />
     </Box>
   );
 }
