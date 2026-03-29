@@ -39,6 +39,8 @@ describe('PointsService', () => {
       countTransactions: jest.fn(),
       getAllPlayers: jest.fn(),
       addNotification: jest.fn(),
+      getNotifications: jest.fn(),
+      dismissNotification: jest.fn(),
     } as unknown as jest.Mocked<DynamoService>;
 
     redis = {
@@ -130,14 +132,82 @@ describe('PointsService', () => {
       expect(dynamo.addNotification).not.toHaveBeenCalled();
     });
 
-    it('does not downgrade tier even if points field is low', async () => {
-      // Player at Gold (tier 3), high totalEarned but low monthly points
+    it('does not downgrade tier when totalEarned still qualifies', async () => {
+      // Player at Gold (tier 3), totalEarned 5000 → still Gold (min 2000)
       dynamo.getPlayer.mockResolvedValue(makePlayer({ tier: 3, points: 10, totalEarned: 5000 }));
       dynamo.addTransaction.mockResolvedValue();
       dynamo.updatePlayer.mockResolvedValue();
 
       const result = await service.awardPoints('p1', { ...defaultDto, bigBlind: 0.1 });
       expect(result.tier).toBe('Gold');
+    });
+
+    it('creates tier downgrade notification when totalEarned drops tier', async () => {
+      // Player manually set to Gold (tier 3) but totalEarned 400 → getTierForPoints returns Bronze
+      dynamo.getPlayer.mockResolvedValue(makePlayer({ tier: 3, points: 10, totalEarned: 400, handsPlayed: 50 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+      dynamo.addNotification.mockResolvedValue();
+
+      const result = await service.awardPoints('p1', { ...defaultDto, bigBlind: 0.1 });
+      expect(result.tier).toBe('Bronze');
+      expect(dynamo.updatePlayer).toHaveBeenCalledWith('p1', expect.objectContaining({ tier: 1 }));
+      expect(dynamo.addNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'tier_downgrade',
+          title: expect.stringContaining('Bronze'),
+        }),
+      );
+    });
+
+    it('increments handsPlayed in player update', async () => {
+      dynamo.getPlayer.mockResolvedValue(makePlayer({ handsPlayed: 10 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+
+      await service.awardPoints('p1', defaultDto);
+      expect(dynamo.updatePlayer).toHaveBeenCalledWith('p1', expect.objectContaining({ handsPlayed: 11 }));
+    });
+
+    it('creates milestone notification on first hand', async () => {
+      dynamo.getPlayer.mockResolvedValue(makePlayer({ handsPlayed: 0, totalEarned: 100 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+      dynamo.addNotification.mockResolvedValue();
+
+      await service.awardPoints('p1', { ...defaultDto, bigBlind: 0.1 });
+      expect(dynamo.addNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'milestone',
+          title: 'First Hand!',
+        }),
+      );
+    });
+
+    it('creates milestone notification when totalEarned crosses 1000', async () => {
+      // totalEarned 995 + 5pts (bb 2.0, Bronze) = 1000
+      dynamo.getPlayer.mockResolvedValue(makePlayer({ handsPlayed: 50, totalEarned: 995 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+      dynamo.addNotification.mockResolvedValue();
+
+      await service.awardPoints('p1', { ...defaultDto, bigBlind: 2.0 });
+      expect(dynamo.addNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'milestone',
+          title: 'Point Collector',
+        }),
+      );
+    });
+
+    it('milestone notification failure does not break the award', async () => {
+      dynamo.getPlayer.mockResolvedValue(makePlayer({ handsPlayed: 0, totalEarned: 100 }));
+      dynamo.addTransaction.mockResolvedValue();
+      dynamo.updatePlayer.mockResolvedValue();
+      dynamo.addNotification.mockRejectedValue(new Error('DynamoDB error'));
+
+      const result = await service.awardPoints('p1', { ...defaultDto, bigBlind: 0.1 });
+      expect(result.earnedPoints).toBe(1);
     });
 
     it('writes immutable transaction record', async () => {

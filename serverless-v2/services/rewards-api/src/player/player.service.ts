@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { DynamoService } from '../dynamo/dynamo.service';
 import { tierNumberToName, getNextTier } from '../config/constants';
 import type {
@@ -6,6 +7,7 @@ import type {
   PlayerRewardsResponse,
   PlayerHistoryResponse,
   TransactionResponse,
+  NotificationsResponse,
 } from '../../../../shared/types/rewards';
 
 @Injectable()
@@ -39,10 +41,42 @@ export class PlayerService {
       tier: tierName,
       points: player.points,
       totalEarned: player.totalEarned,
+      handsPlayed: player.handsPlayed,
       nextTierAt: nextTier ? nextTier.minPoints : null,
       nextTierName: nextTier ? nextTier.name : null,
       recentTransactions,
     };
+  }
+
+  async getNotifications(playerId: string, unreadOnly: boolean): Promise<NotificationsResponse> {
+    const records = await this.dynamo.getNotifications(playerId, unreadOnly);
+
+    const notifications = records.map((r) => ({
+      notificationId: r.notificationId,
+      type: r.type,
+      title: r.title,
+      description: r.description,
+      dismissed: r.dismissed,
+      createdAt: r.createdAt,
+    }));
+
+    const unreadCount = unreadOnly
+      ? notifications.length
+      : notifications.filter((n) => !n.dismissed).length;
+
+    return { notifications, unreadCount };
+  }
+
+  async dismissNotification(playerId: string, notificationId: string): Promise<{ success: true }> {
+    try {
+      await this.dynamo.dismissNotification(playerId, notificationId);
+    } catch (err) {
+      if (err instanceof ConditionalCheckFailedException) {
+        throw new NotFoundException({ error: 'Not found', message: `Notification ${notificationId} not found` });
+      }
+      throw err;
+    }
+    return { success: true };
   }
 
   async getHistory(playerId: string, limit: number, cursor?: string): Promise<PlayerHistoryResponse> {

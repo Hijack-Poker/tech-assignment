@@ -119,6 +119,7 @@ export interface PlayerRewardsResponse {
   tier: TierName;
   points: number;
   totalEarned: number;
+  handsPlayed: number;
   nextTierAt: number | null;
   nextTierName: TierName | null;
   recentTransactions: TransactionResponse[];

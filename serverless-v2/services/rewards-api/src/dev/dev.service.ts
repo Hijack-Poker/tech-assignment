@@ -42,6 +42,7 @@ export class DevService {
       tier: tierName,
       points: player.points,
       totalEarned: player.totalEarned,
+      handsPlayed: player.handsPlayed,
       nextTierAt: nextTier ? nextTier.minPoints : null,
       nextTierName: nextTier ? nextTier.name : null,
       recentTransactions,

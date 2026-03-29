@@ -177,4 +177,42 @@ export class DynamoService {
       }),
     );
   }
+
+  /**
+   * Get notifications for a player, newest first (ULID sort key).
+   * Optionally filter to only undismissed notifications.
+   */
+  async getNotifications(playerId: string, unreadOnly = false): Promise<NotificationRecord[]> {
+    const values: Record<string, unknown> = { ':pid': playerId };
+    if (unreadOnly) {
+      values[':false'] = false;
+    }
+
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: NOTIFICATIONS_TABLE,
+        KeyConditionExpression: 'playerId = :pid',
+        ExpressionAttributeValues: values,
+        ScanIndexForward: false,
+        ...(unreadOnly && { FilterExpression: 'dismissed = :false' }),
+      }),
+    );
+    return (result.Items as NotificationRecord[]) || [];
+  }
+
+  /**
+   * Mark a notification as dismissed.
+   * Throws if the notification does not exist.
+   */
+  async dismissNotification(playerId: string, notificationId: string): Promise<void> {
+    await docClient.send(
+      new UpdateCommand({
+        TableName: NOTIFICATIONS_TABLE,
+        Key: { playerId, notificationId },
+        UpdateExpression: 'SET dismissed = :true',
+        ExpressionAttributeValues: { ':true': true },
+        ConditionExpression: 'attribute_exists(playerId)',
+      }),
+    );
+  }
 }

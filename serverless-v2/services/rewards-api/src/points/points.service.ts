@@ -7,6 +7,7 @@ import {
   getBasePointsForStakes,
   getTierForPoints,
   tierNumberToName,
+  checkMilestones,
   TIERS,
 } from '../config/constants';
 import type { AwardPointsResponse, LeaderboardEntry, LeaderboardResponse, TierNumber } from '../../../../shared/types/rewards';
@@ -56,24 +57,29 @@ export class PointsService {
       balanceAfter: newPoints,
     });
 
+    // Step 6: Increment handsPlayed
+    const newHandsPlayed = player.handsPlayed + 1;
+
     const playerUpdates: Record<string, unknown> = {
       points: newPoints,
       totalEarned: newTotalEarned,
+      handsPlayed: newHandsPlayed,
       updatedAt: now,
     };
 
-    // Step 6: Check for tier upgrade
+    // Step 7: Check for tier change
     const newTierDef = getTierForPoints(newTotalEarned);
-    const tierChanged = newTierDef.number > player.tier;
+    const tierUpgraded = newTierDef.number > player.tier;
+    const tierDowngraded = newTierDef.number < player.tier;
 
-    if (tierChanged) {
+    if (tierUpgraded || tierDowngraded) {
       playerUpdates.tier = newTierDef.number;
     }
 
     await this.dynamo.updatePlayer(playerId, playerUpdates);
 
-    // Step 7: Create notification on tier change
-    if (tierChanged) {
+    // Step 8: Create notification on tier change
+    if (tierUpgraded) {
       try {
         await this.dynamo.addNotification({
           playerId,
@@ -87,13 +93,46 @@ export class PointsService {
       } catch (err) {
         this.logger.warn(`Failed to create tier upgrade notification: ${(err as Error).message}`);
       }
+    } else if (tierDowngraded) {
+      try {
+        const oldTierName = tierNumberToName(player.tier as TierNumber);
+        await this.dynamo.addNotification({
+          playerId,
+          notificationId: ulid(),
+          type: 'tier_downgrade',
+          title: `Moved to ${newTierDef.name}`,
+          description: `Your tier changed from ${oldTierName} to ${newTierDef.name}. Earn more points to rank back up!`,
+          dismissed: false,
+          createdAt: now,
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to create tier downgrade notification: ${(err as Error).message}`);
+      }
     }
 
-    // Step 8: Update Redis leaderboard (fire-and-forget)
+    // Step 9: Check milestones and create notifications
+    const triggered = checkMilestones(player.handsPlayed, newHandsPlayed, player.totalEarned, newTotalEarned);
+    for (const milestone of triggered) {
+      try {
+        await this.dynamo.addNotification({
+          playerId,
+          notificationId: ulid(),
+          type: milestone.type,
+          title: milestone.title,
+          description: milestone.description,
+          dismissed: false,
+          createdAt: now,
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to create milestone notification: ${(err as Error).message}`);
+      }
+    }
+
+    // Step 10: Update Redis leaderboard (fire-and-forget)
     this.redis.updateLeaderboard(monthKey, playerId, newPoints);
 
-    // Step 9: Return response
-    const currentTierNumber = tierChanged ? newTierDef.number : player.tier;
+    // Step 11: Return response
+    const currentTierNumber = (tierUpgraded || tierDowngraded) ? newTierDef.number : player.tier;
 
     return {
       playerId,

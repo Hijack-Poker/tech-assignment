@@ -1,6 +1,40 @@
-import { TierDefinition, TierNumber, TierName } from '../../../shared/types/rewards';
+import { TierDefinition, TierNumber, TierName, NotificationType } from '../../../shared/types/rewards';
 
 export type { TierDefinition, TierNumber, TierName };
+
+// ─── Milestone Definitions ──────────────────────────────────────────
+
+export interface MilestoneDefinition {
+  id: string;
+  field: 'handsPlayed' | 'totalEarned';
+  threshold: number;
+  title: string;
+  description: string;
+  type: NotificationType;
+}
+
+export const MILESTONES: MilestoneDefinition[] = [
+  { id: 'first_hand', field: 'handsPlayed', threshold: 1, title: 'First Hand!', description: 'You played your very first hand. Welcome to the tables!', type: 'milestone' },
+  { id: 'hands_100', field: 'handsPlayed', threshold: 100, title: 'Century Club', description: "You've played 100 hands. You're getting into the groove!", type: 'milestone' },
+  { id: 'hands_500', field: 'handsPlayed', threshold: 500, title: 'Card Shark', description: "500 hands played! You're a true card shark.", type: 'milestone' },
+  { id: 'points_1000', field: 'totalEarned', threshold: 1000, title: 'Point Collector', description: "You've earned 1,000 total points. Keep stacking!", type: 'milestone' },
+];
+
+/**
+ * Returns milestones that were crossed between old and new values.
+ */
+export function checkMilestones(
+  oldHands: number,
+  newHands: number,
+  oldTotal: number,
+  newTotal: number,
+): MilestoneDefinition[] {
+  return MILESTONES.filter((m) => {
+    const oldVal = m.field === 'handsPlayed' ? oldHands : oldTotal;
+    const newVal = m.field === 'handsPlayed' ? newHands : newTotal;
+    return oldVal < m.threshold && newVal >= m.threshold;
+  });
+}
 
 /**
  * Rewards tier definitions.

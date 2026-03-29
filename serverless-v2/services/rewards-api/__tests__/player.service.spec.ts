@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { PlayerService } from '../src/player/player.service';
 import { DynamoService } from '../src/dynamo/dynamo.service';
 import { PlayerRecord, TransactionRecord } from '../../../../shared/types/rewards';
@@ -51,6 +52,8 @@ describe('PlayerService', () => {
       countTransactions: jest.fn(),
       getAllPlayers: jest.fn(),
       addNotification: jest.fn(),
+      getNotifications: jest.fn(),
+      dismissNotification: jest.fn(),
     } as unknown as jest.Mocked<DynamoService>;
 
     service = new PlayerService(dynamo);
@@ -122,6 +125,72 @@ describe('PlayerService', () => {
 
       const result = await service.getRewards('p1');
       expect(result.playerId).toBe('p1');
+    });
+  });
+
+  describe('getNotifications', () => {
+    it('returns notifications with unread count', async () => {
+      dynamo.getNotifications.mockResolvedValue([
+        { playerId: 'p1', notificationId: 'n1', type: 'tier_upgrade', title: 'Upgraded!', description: 'Nice', dismissed: false, createdAt: '2026-03-01T00:00:00Z' },
+        { playerId: 'p1', notificationId: 'n2', type: 'milestone', title: 'First Hand!', description: 'Welcome', dismissed: true, createdAt: '2026-02-01T00:00:00Z' },
+      ]);
+
+      const result = await service.getNotifications('p1', false);
+      expect(result.notifications).toHaveLength(2);
+      expect(result.unreadCount).toBe(1);
+    });
+
+    it('passes unreadOnly flag to dynamo', async () => {
+      dynamo.getNotifications.mockResolvedValue([]);
+
+      await service.getNotifications('p1', true);
+      expect(dynamo.getNotifications).toHaveBeenCalledWith('p1', true);
+    });
+
+    it('maps notification fields correctly', async () => {
+      dynamo.getNotifications.mockResolvedValue([
+        { playerId: 'p1', notificationId: 'n1', type: 'milestone', title: 'Test', description: 'Desc', dismissed: false, createdAt: '2026-03-01T00:00:00Z' },
+      ]);
+
+      const result = await service.getNotifications('p1', false);
+      const n = result.notifications[0];
+      expect(n.notificationId).toBe('n1');
+      expect(n.type).toBe('milestone');
+      expect(n.title).toBe('Test');
+      expect(n).not.toHaveProperty('playerId');
+    });
+
+    it('sets unreadCount to length when unreadOnly is true', async () => {
+      dynamo.getNotifications.mockResolvedValue([
+        { playerId: 'p1', notificationId: 'n1', type: 'tier_upgrade', title: 'Up', description: 'D', dismissed: false, createdAt: '2026-03-01T00:00:00Z' },
+      ]);
+
+      const result = await service.getNotifications('p1', true);
+      expect(result.unreadCount).toBe(1);
+    });
+  });
+
+  describe('dismissNotification', () => {
+    it('returns success on valid dismiss', async () => {
+      dynamo.dismissNotification.mockResolvedValue();
+
+      const result = await service.dismissNotification('p1', 'n1');
+      expect(result).toEqual({ success: true });
+      expect(dynamo.dismissNotification).toHaveBeenCalledWith('p1', 'n1');
+    });
+
+    it('throws NotFoundException when notification does not exist', async () => {
+      dynamo.dismissNotification.mockRejectedValue(
+        new ConditionalCheckFailedException({ message: 'Condition not met', $metadata: {} }),
+      );
+
+      await expect(service.dismissNotification('p1', 'nonexistent')).rejects.toThrow(NotFoundException);
+    });
+
+    it('re-throws non-conditional errors', async () => {
+      dynamo.dismissNotification.mockRejectedValue(new Error('Network error'));
+
+      await expect(service.dismissNotification('p1', 'n1')).rejects.toThrow('Network error');
     });
   });
 

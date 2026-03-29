@@ -15,6 +15,7 @@ import Leaderboard, { LeaderboardHandle } from '../components/Leaderboard';
 import ActivityFeed from '../components/ActivityFeed';
 import SimulationControls from '../components/SimulationControls';
 import AdjustPointsModal from '../components/AdjustPointsModal';
+import NotificationBell, { NotificationBellHandle } from '../components/NotificationBell';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ function Dashboard() {
   const [adjustPlayerId, setAdjustPlayerId] = useState<string | null>(null);
   const leaderboardEntriesRef = useRef<LeaderboardEntry[]>([]);
   const leaderboardRef = useRef<LeaderboardHandle>(null);
+  const notificationBellRef = useRef<NotificationBellHandle>(null);
 
   // Redirect to login if no player ID
   useEffect(() => {
@@ -61,6 +63,7 @@ function Dashboard() {
             ...prev,
             points: response.newPoints,
             totalEarned: response.newTotalEarned,
+            handsPlayed: prev.handsPlayed + 1,
             tier: response.tier,
             nextTierAt,
             nextTierName,
@@ -68,6 +71,7 @@ function Dashboard() {
         : prev,
     );
     setNewTransaction(response.transaction);
+    notificationBellRef.current?.refresh();
   }, []);
 
   // Track leaderboard entries for simulation targeting (top + nearby, deduplicated)
@@ -162,7 +166,10 @@ function Dashboard() {
             Rewards Dashboard
           </Typography>
         </Box>
-        <SimulationControls enabled={simulationEnabled} onToggle={setSimulationEnabled} />
+        <Box display="flex" alignItems="center" gap={1}>
+          <NotificationBell ref={notificationBellRef} />
+          <SimulationControls enabled={simulationEnabled} onToggle={setSimulationEnabled} />
+        </Box>
       </Box>
 
       {/* Three-panel layout */}

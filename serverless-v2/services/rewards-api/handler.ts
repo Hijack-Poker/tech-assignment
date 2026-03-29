@@ -25,7 +25,7 @@ async function bootstrap(): Promise<Handler> {
   app.enableCors({
     origin: '*',
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Player-Id'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   app.useGlobalPipes(
     new ValidationPipe({

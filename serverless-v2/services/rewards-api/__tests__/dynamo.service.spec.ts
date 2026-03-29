@@ -212,4 +212,68 @@ describe('DynamoService', () => {
       expect(command.input.Item).toEqual(notification);
     });
   });
+
+  describe('getNotifications', () => {
+    it('queries notifications in reverse order', async () => {
+      const notifications = [
+        { playerId: 'p1', notificationId: 'n2', type: 'milestone', title: 'Second' },
+        { playerId: 'p1', notificationId: 'n1', type: 'tier_upgrade', title: 'First' },
+      ];
+      mockSend.mockResolvedValue({ Items: notifications });
+
+      const result = await service.getNotifications('p1');
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.TableName).toBe('rewards-notifications');
+      expect(command.input.ScanIndexForward).toBe(false);
+      expect(result).toEqual(notifications);
+    });
+
+    it('applies dismissed filter when unreadOnly is true', async () => {
+      mockSend.mockResolvedValue({ Items: [] });
+
+      await service.getNotifications('p1', true);
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.FilterExpression).toBe('dismissed = :false');
+      expect(command.input.ExpressionAttributeValues[':false']).toBe(false);
+    });
+
+    it('does not filter when unreadOnly is false', async () => {
+      mockSend.mockResolvedValue({ Items: [] });
+
+      await service.getNotifications('p1', false);
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.FilterExpression).toBeUndefined();
+    });
+
+    it('returns empty array when no items', async () => {
+      mockSend.mockResolvedValue({});
+      const result = await service.getNotifications('p1');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('dismissNotification', () => {
+    it('sets dismissed to true with condition check', async () => {
+      mockSend.mockResolvedValue({});
+
+      await service.dismissNotification('p1', 'n1');
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.TableName).toBe('rewards-notifications');
+      expect(command.input.Key).toEqual({ playerId: 'p1', notificationId: 'n1' });
+      expect(command.input.UpdateExpression).toBe('SET dismissed = :true');
+      expect(command.input.ExpressionAttributeValues[':true']).toBe(true);
+      expect(command.input.ConditionExpression).toBe('attribute_exists(playerId)');
+    });
+
+    it('throws when notification does not exist', async () => {
+      const { ConditionalCheckFailedException } = require('@aws-sdk/client-dynamodb');
+      mockSend.mockRejectedValue(new ConditionalCheckFailedException({ message: 'Condition not met', $metadata: {} }));
+
+      await expect(service.dismissNotification('p1', 'nonexistent')).rejects.toThrow();
+    });
+  });
 });

@@ -90,6 +90,9 @@ function PlayerCard({ player, onPointsAwarded, onAdjustPoints }: PlayerCardProps
         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
           Total earned: {player.totalEarned.toLocaleString()}
         </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Hands played: {player.handsPlayed.toLocaleString()}
+        </Typography>
       </Box>
 
       <Box>

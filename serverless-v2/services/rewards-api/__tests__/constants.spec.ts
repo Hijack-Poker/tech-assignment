@@ -1,11 +1,13 @@
 import {
   TIERS,
   STAKES_POINTS,
+  MILESTONES,
   getBasePointsForStakes,
   getTierForPoints,
   getNextTier,
   tierNumberToName,
   tierNameToNumber,
+  checkMilestones,
 } from '../src/config/constants';
 
 describe('TIERS constant', () => {
@@ -139,5 +141,66 @@ describe('tierNameToNumber', () => {
 
   it('defaults to 1 for invalid name', () => {
     expect(tierNameToNumber('Invalid' as any)).toBe(1);
+  });
+});
+
+describe('MILESTONES constant', () => {
+  it('defines four milestones', () => {
+    expect(MILESTONES).toHaveLength(4);
+  });
+
+  it('all milestones have required fields', () => {
+    for (const m of MILESTONES) {
+      expect(m).toHaveProperty('id');
+      expect(m).toHaveProperty('field');
+      expect(m).toHaveProperty('threshold');
+      expect(m).toHaveProperty('title');
+      expect(m).toHaveProperty('type', 'milestone');
+    }
+  });
+});
+
+describe('checkMilestones', () => {
+  it('returns first_hand when handsPlayed crosses 1', () => {
+    const result = checkMilestones(0, 1, 0, 5);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('first_hand');
+  });
+
+  it('returns hands_100 when handsPlayed crosses 100', () => {
+    const result = checkMilestones(99, 100, 500, 505);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('hands_100');
+  });
+
+  it('returns hands_500 when handsPlayed crosses 500', () => {
+    const result = checkMilestones(499, 500, 2000, 2005);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('hands_500');
+  });
+
+  it('returns points_1000 when totalEarned crosses 1000', () => {
+    const result = checkMilestones(50, 51, 995, 1005);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('points_1000');
+  });
+
+  it('returns multiple milestones when multiple thresholds are crossed', () => {
+    // Crossing both first_hand (handsPlayed 0→1) and points_1000 (totalEarned 999→1001)
+    const result = checkMilestones(0, 1, 999, 1001);
+    expect(result).toHaveLength(2);
+    const ids = result.map((m) => m.id);
+    expect(ids).toContain('first_hand');
+    expect(ids).toContain('points_1000');
+  });
+
+  it('returns empty array when no thresholds are crossed', () => {
+    const result = checkMilestones(5, 6, 100, 105);
+    expect(result).toEqual([]);
+  });
+
+  it('does not trigger when value was already at or above threshold', () => {
+    const result = checkMilestones(1, 2, 1000, 1005);
+    expect(result).toEqual([]);
   });
 });

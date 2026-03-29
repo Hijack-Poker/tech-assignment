@@ -19,6 +19,7 @@ const mockPlayer: PlayerRewardsResponse = {
   tier: 'Silver',
   points: 750,
   totalEarned: 750,
+  handsPlayed: 42,
   nextTierAt: 2000,
   nextTierName: 'Gold',
   recentTransactions: [],
