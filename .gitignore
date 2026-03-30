@@ -6,3 +6,9 @@ dist/
 coverage/
 *.log
 .DS_Store
+tmp/
+
+# TypeScript compiled output in shared types
+serverless-v2/shared/types/*.js
+serverless-v2/shared/types/*.js.map
+serverless-v2/shared/types/*.d.ts

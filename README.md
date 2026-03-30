@@ -136,7 +136,46 @@ GAME_PREP → SETUP_DEALER → SETUP_SMALL_BLIND → SETUP_BIG_BLIND → DEAL_CA
 
 Each call to `processTable(tableId)` advances the hand by **one step**. After the final step, the next call starts a new hand automatically.
 
-### API + Frontend (Options A & C)
+### Rewards System (Option A)
+
+```
+React Dashboard (Vite :4000)
+  ├── POST /points/award          → PointsService    → DynamoDB + Redis
+  ├── GET  /points/leaderboard    → PointsService    → Redis (scores) + DynamoDB (profiles)
+  ├── GET  /player/rewards        → PlayerService    → DynamoDB
+  ├── GET  /player/notifications  → PlayerService    → DynamoDB
+  └── GET  /admin/leaderboard     → AdminService     → Redis + DynamoDB
+```
+
+**Points Engine** — Each hand awards base points (1–10) based on big-blind bracket, multiplied by the player's tier multiplier:
+
+| Tier | Threshold (totalEarned) | Multiplier |
+|------|------------------------|------------|
+| Bronze | 0 | 1.0x |
+| Silver | 500 | 1.25x |
+| Gold | 2,000 | 1.5x |
+| Platinum | 10,000 | 2.0x |
+
+Tier is determined by `totalEarned` (lifetime points). Monthly resets zero out current-month `points` but preserve `totalEarned`, so players never lose lifetime progress.
+
+**Monthly Reset** — Simulated via `POST /dev/monthly-reset`. Applies tier floor protection (max one tier drop per reset), creates downgrade notifications, snapshots tier history, and resets the Redis leaderboard for the new month.
+
+**Leaderboard** — Backed by Redis sorted sets (one key per month). Player profiles are batch-fetched from DynamoDB to display usernames and stored tiers (not score-derived tiers, which would show Bronze after a monthly reset).
+
+**Notifications** — Tier upgrades, tier downgrades, and milestone achievements (first hand, 100 hands, 500 hands, 1,000 points) trigger in-app notifications. Dismissible via `PATCH /player/notifications/:id/dismiss`.
+
+**API Modules:**
+
+| Module | Endpoints | Purpose |
+|--------|-----------|---------|
+| `PointsModule` | `POST /points/award`, `GET /points/leaderboard` | Core gameplay: award points and view rankings |
+| `PlayerModule` | `GET /player/rewards`, `GET /player/history`, `GET /player/notifications`, `PATCH /player/notifications/:id/dismiss` | Authenticated player self-service (X-Player-Id header) |
+| `AdminModule` | `GET /admin/players/:id/rewards`, `POST /admin/points/adjust`, `GET /admin/leaderboard`, `POST /admin/tier/override` | CS/ops tools for cross-player access |
+| `DevModule` | `GET /dev/player/:id`, `PUT /dev/player/:id/points`, `POST /dev/monthly-reset`, `GET /dev/tier-history/:id` | Demo/testing tools (no auth, removed in production) |
+
+**Frontend** — React + MUI dashboard with player card, leaderboard (top-10 + nearby view), activity feed, notification bell, live simulation toggle, and monthly reset trigger.
+
+### Streaks System (Option C)
 
 ```
 React Frontend (Vite) → Serverless API (serverless-offline) → DynamoDB Local
@@ -227,8 +266,14 @@ All services mount `serverless-v2/shared/` for access to common config and game 
 # Holdem processor (15 tests)
 cd serverless-v2/services/holdem-processor && npm install && npm test
 
-# Rewards API (1 test)
-cd serverless-v2/services/rewards-api && npm install && npm test
+# Rewards API — unit tests (180 tests across 13 suites)
+docker compose exec rewards-api npx jest
+
+# Rewards Frontend — component tests (68 tests across 10 suites)
+docker compose exec rewards-frontend npx vitest run
+
+# Rewards API — e2e tests (requires seeded DynamoDB + Redis)
+docker compose exec rewards-api npx jest monthly-reset.e2e
 
 # Streaks API (1 test)
 cd serverless-v2/services/streaks-api && npm install && npm test
@@ -285,10 +330,11 @@ The `infrastructure/mysql-init/01-schema.sql` file creates tables and seed data 
 
 Created by `scripts/init-dynamodb.sh` (also run by the `dynamodb-init` container on startup):
 
-- `rewards-players` — Player tier and points
-- `rewards-transactions` — Points transaction history
-- `rewards-leaderboard` — Monthly leaderboard
-- `rewards-notifications` — Player notifications
+- `rewards-players` — Player tier, points, and lifetime totals
+- `rewards-transactions` — Immutable points transaction history (PK: playerId, SK: timestamp)
+- `rewards-leaderboard` — Created by scaffolding but unused; leaderboard is backed by Redis sorted sets for O(log N) rank queries
+- `rewards-notifications` — Tier change and milestone notifications (PK: playerId, SK: notificationId)
+- `rewards-tier-history` — Tier progression snapshots for timeline visualization (PK: playerId, SK: createdAt)
 - `streaks-players` — Streak state
 - `streaks-activity` — Daily check-in records
 - `streaks-rewards` — Streak milestone rewards
@@ -304,6 +350,7 @@ Created by `scripts/init-dynamodb.sh` (also run by the `dynamodb-init` container
 | MySQL | 3306 (or `MYSQL_EXTERNAL_PORT`) | core |
 | Redis | 6379 (or `REDIS_EXTERNAL_PORT`) | core |
 | DynamoDB Local | 8000 (or `DYNAMODB_EXTERNAL_PORT`) | core |
+| DynamoDB Admin | 8001 (or `DYNAMODB_ADMIN_PORT`) | core |
 | ElasticMQ (SQS) | 9324 | engine |
 | EventBridge Mock | 4010 | engine |
 | Holdem Processor | 3030 | engine |

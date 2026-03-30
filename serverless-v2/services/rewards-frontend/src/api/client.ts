@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 const apiClient = axios.create({
   baseURL: `${API_URL}/api/v1`,
@@ -9,9 +9,11 @@ const apiClient = axios.create({
 
 // Add player ID header to all requests
 apiClient.interceptors.request.use((config) => {
-  const playerId = localStorage.getItem('playerId');
-  if (playerId) {
-    config.headers['X-Player-Id'] = playerId;
+  if (!config.headers['X-Player-Id']) {
+    const playerId = localStorage.getItem('playerId');
+    if (playerId) {
+      config.headers['X-Player-Id'] = playerId;
+    }
   }
   return config;
 });

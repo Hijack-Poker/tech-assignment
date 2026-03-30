@@ -9,6 +9,16 @@ provider:
   region: us-east-1
   environment:
     STAGE: local
+    DYNAMODB_ENDPOINT: ${env:DYNAMODB_ENDPOINT, 'http://localhost:8000'}
+    REWARDS_PLAYERS_TABLE: ${env:REWARDS_PLAYERS_TABLE, 'rewards-players'}
+    REWARDS_TRANSACTIONS_TABLE: ${env:REWARDS_TRANSACTIONS_TABLE, 'rewards-transactions'}
+    REWARDS_NOTIFICATIONS_TABLE: ${env:REWARDS_NOTIFICATIONS_TABLE, 'rewards-notifications'}
+    REWARDS_TIER_HISTORY_TABLE: ${env:REWARDS_TIER_HISTORY_TABLE, 'rewards-tier-history'}
+    REDIS_HOST: ${env:REDIS_HOST, 'localhost'}
+    REDIS_PORT: ${env:REDIS_PORT, '6379'}
+    AWS_REGION: ${env:AWS_REGION, 'us-east-1'}
+    AWS_ACCESS_KEY_ID: ${env:AWS_ACCESS_KEY_ID, 'local'}
+    AWS_SECRET_ACCESS_KEY: ${env:AWS_SECRET_ACCESS_KEY, 'local'}
 
 functions:
   api:
@@ -17,6 +27,7 @@ functions:
       - httpApi: '*'
 
 plugins:
+  - serverless-plugin-typescript
   - serverless-offline
 
 custom:

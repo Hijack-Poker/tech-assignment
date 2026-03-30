@@ -12,6 +12,9 @@ provider:
   environment:
     STAGE: ${self:provider.stage}
 
+plugins:
+  - serverless-plugin-typescript
+
 functions:
   api:
     handler: handler.api

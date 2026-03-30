@@ -108,6 +108,16 @@ services:
           --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
           2>/dev/null || true
 
+        aws dynamodb create-table \
+          --endpoint-url http://dynamodb-local:8000 \
+          --table-name rewards-tier-history \
+          --attribute-definitions \
+            AttributeName=playerId,AttributeType=S \
+            AttributeName=createdAt,AttributeType=S \
+          --key-schema AttributeName=playerId,KeyType=HASH AttributeName=createdAt,KeyType=RANGE \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          2>/dev/null || true
+
         # Streaks tables
         aws dynamodb create-table \
           --endpoint-url http://dynamodb-local:8000 \
@@ -284,6 +294,20 @@ services:
     volumes:
       - ./ui:/usr/share/nginx/html:ro
 
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    profiles: [core, rewards, engine, streaks]
+    ports:
+      - "${DYNAMODB_ADMIN_PORT:-8001}:8001"
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+
   # ─── Rewards Profile (Option A) ──────────────────────────────────────
   rewards-api:
     image: node:22-alpine
@@ -297,29 +321,64 @@ services:
     depends_on:
       dynamodb-local:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       STAGE: local
       DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REWARDS_PLAYERS_TABLE: rewards-players
       REWARDS_TRANSACTIONS_TABLE: rewards-transactions
+      REWARDS_NOTIFICATIONS_TABLE: rewards-notifications
+      REWARDS_TIER_HISTORY_TABLE: rewards-tier-history
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: local
       AWS_SECRET_ACCESS_KEY: local
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        npm install && npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+        cd /app/shared && npm install
+        cd /app
+        npm install
+        npx serverless offline --config serverless.offline.yml --host 0.0.0.0
+
+  rewards-seed:
+    image: node:22-alpine
+    profiles: [rewards]
+    working_dir: /app
+    volumes:
+      - ./serverless-v2/services/rewards-api:/app
+      - ./serverless-v2/shared:/app/shared
+      - ./scripts:/scripts
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cd /app/shared && npm install --silent
+        cd /app && npm install --silent
+        NODE_PATH=/app/node_modules node /scripts/seed-rewards.js
 
   rewards-frontend:
     image: node:22-alpine
     profiles: [rewards]
     ports:
-      - "${REWARDS_FRONTEND_PORT:-4000}:4000"
+      - "127.0.0.1:${REWARDS_FRONTEND_PORT:-4000}:4000"
     working_dir: /app
     volumes:
       - ./serverless-v2/services/rewards-frontend:/app
-    environment:
-      VITE_API_URL: http://localhost:5000
+      - ./serverless-v2/shared:/app/shared
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
